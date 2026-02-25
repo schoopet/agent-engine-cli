@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-engine-cli"
-version = "0.1.6"
+version = "0.1.7"
 description = "Command-line interface for managing Google Cloud Vertex AI Agent Engine deployments"
 readme = "README.md"
 requires-python = ">=3.11"
