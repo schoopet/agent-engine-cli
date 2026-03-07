@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-engine-cli"
-version = "0.1.7"
+version = "0.1.8"
 description = "Command-line interface for managing Google Cloud Vertex AI Agent Engine deployments"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,8 +36,8 @@ dependencies = [
 ae = "agent_engine_cli.main:app"
 
 [project.urls]
-"Homepage" = "https://github.com/mmontan/agent-engine-cli"
-"Bug Tracker" = "https://github.com/mmontan/agent-engine-cli/issues"
+"Homepage" = "https://github.com/schoopet/agent-engine-cli"
+"Bug Tracker" = "https://github.com/schoopet/agent-engine-cli/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_engine_cli"]
