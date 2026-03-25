@@ -138,11 +138,8 @@ class AgentEngineClient:
             agent_id: The agent resource ID or full resource name
             force: Force deletion even if agent has associated resources
         """
-        from vertexai import agent_engines
-
         resource_name = self._resolve_resource_name(agent_id)
-
-        agent_engines.delete(resource_name, force=force)
+        self._client.agent_engines.delete(name=resource_name, force=force)
 
     def list_sessions(self, agent_id: str) -> Iterator:
         """List all sessions for an agent.
