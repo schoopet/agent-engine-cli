@@ -33,7 +33,7 @@ class TestAgentEngineClient:
 
         assert client.project == "test-project"
         assert client.location == "us-central1"
-        mock_vertexai.init.assert_called_once_with(project="test-project", location="us-central1")
+        mock_vertexai.init.assert_not_called()
         mock_vertexai.Client.assert_called_once()
 
     def test_init_custom_location(self, mock_vertexai, mock_types):

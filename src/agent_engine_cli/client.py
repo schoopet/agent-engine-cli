@@ -38,9 +38,7 @@ class AgentEngineClient:
         # Import vertexai locally to improve CLI startup time
         import vertexai
 
-        vertexai.init(project=project, location=location)
-
-        http_options: dict[str, str] = {}
+        http_options: dict[str, Any] = {}
         if api_version:
             http_options["api_version"] = api_version
         if base_url:

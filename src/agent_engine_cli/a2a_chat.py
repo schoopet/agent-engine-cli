@@ -8,6 +8,7 @@ import traceback
 import uuid
 import warnings
 from dataclasses import dataclass, field
+from typing import Any
 
 from rich.console import Console
 from rich.markup import escape
@@ -162,7 +163,7 @@ async def run_a2a_chat(
     import vertexai
 
     # Get remote agent
-    http_options: dict = {"timeout": 10_000}
+    http_options: dict[str, Any] = {"timeout": 10_000}
     if api_version:
         http_options["api_version"] = api_version
     if base_url:

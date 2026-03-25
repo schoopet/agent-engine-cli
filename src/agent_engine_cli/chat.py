@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import warnings
+from typing import Any
 
 from rich.console import Console
 from rich.markup import escape
@@ -153,12 +154,12 @@ async def run_chat(
     import vertexai
 
     # Get agent instance
-    http_options: dict[str, str] = {}
+    http_options: dict[str, Any] = {"timeout": 10_000}
     if api_version:
         http_options["api_version"] = api_version
     if base_url:
         http_options["base_url"] = base_url
-    client = vertexai.Client(project=project, location=location, http_options=http_options or None)
+    client = vertexai.Client(project=project, location=location, http_options=http_options)
     resource_name = (
         f"projects/{project}/locations/{location}/reasoningEngines/{agent_id}"
     )
