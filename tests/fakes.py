@@ -56,7 +56,7 @@ class FakeAgentEngineClient:
             if agent_name.endswith(f"/{agent_id}"):
                 return agent
 
-        raise Exception(f"Agent {agent_id} not found")
+        raise ValueError(f"Agent {agent_id} not found")
 
     def create_agent(
         self,
@@ -109,14 +109,14 @@ class FakeAgentEngineClient:
                     or self._memories.get(name)
                     or self._sandboxes.get(name)
                 ):
-                    raise Exception("Agent has resources, use force to delete")
+                    raise ValueError("Agent has resources, use force to delete")
 
             del self._agents[name]
             self._sessions.pop(name, None)
             self._sandboxes.pop(name, None)
             self._memories.pop(name, None)
         else:
-            raise Exception(f"Agent {agent_id} not found")
+            raise ValueError(f"Agent {agent_id} not found")
 
     def list_sessions(self, agent_id: str) -> Iterator[Session]:
         agent = self.get_agent(agent_id)

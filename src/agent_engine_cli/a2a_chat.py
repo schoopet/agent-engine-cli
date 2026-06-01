@@ -6,9 +6,7 @@ import asyncio
 import json
 import traceback
 import uuid
-import warnings
 from dataclasses import dataclass, field
-from typing import Any
 
 from rich.markup import escape
 from rich.panel import Panel
@@ -188,44 +186,20 @@ async def run_a2a_chat(
         base_url: Optional override for the Vertex AI base URL.
         api_version: Optional API version override.
     """
-    # Suppress vertexai experimental warnings
-    try:
-        from vertexai._genai.constants import ExperimentalWarning
+    from agent_engine_cli.chat import (
+        enable_debug_logging,
+        get_remote_agent,
+        suppress_experimental_warnings,
+    )
 
-        warnings.filterwarnings("ignore", category=ExperimentalWarning)
-    except ImportError:
-        pass
+    suppress_experimental_warnings()
 
     if debug:
-        from agent_engine_cli.chat import (
-            _install_api_logging_hooks,
-            _install_httpx_logging_hooks,
-            _setup_debug_logging,
-        )
+        enable_debug_logging()
 
-        console.print(
-            "[yellow]Warning: Debug mode logs HTTP requests/responses which "
-            "may include authentication tokens and credentials.[/yellow]"
-        )
-        _setup_debug_logging()
-        _install_api_logging_hooks(debug=True)
-        _install_httpx_logging_hooks()
-
-    import vertexai
-
-    # Get remote agent
-    http_options: dict[str, Any] = {"timeout": 10_000}
-    if api_version:
-        http_options["api_version"] = api_version
-    if base_url:
-        http_options["base_url"] = base_url
-    from agent_engine_cli.client import resolve_resource_name
-
-    client = vertexai.Client(
-        project=project, location=location, http_options=http_options
+    remote_agent = await get_remote_agent(
+        project, location, agent_id, base_url, api_version
     )
-    resource_name = resolve_resource_name(project, location, agent_id)
-    remote_agent = await asyncio.to_thread(client.agent_engines.get, name=resource_name)
     _rebind_missing_a2a_methods(remote_agent)
 
     if debug:

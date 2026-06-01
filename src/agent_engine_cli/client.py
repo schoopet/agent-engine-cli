@@ -20,7 +20,14 @@ def resolve_resource_name(project: str, location: str, agent_id: str) -> str:
     If agent_id already contains a '/', it is returned as-is (assumed to be
     a full resource name).  Otherwise it is expanded to
     ``projects/{project}/locations/{location}/reasoningEngines/{agent_id}``.
+
+    Raises:
+        ValueError: If agent_id is empty or contains invalid characters.
     """
+    if not agent_id or not agent_id.strip():
+        raise ValueError("agent_id must not be empty")
+    if any(c.isspace() or ord(c) < 32 for c in agent_id):
+        raise ValueError(f"agent_id contains invalid characters: {agent_id!r}")
     if "/" in agent_id:
         return agent_id
     return f"projects/{project}/locations/{location}/reasoningEngines/{agent_id}"
@@ -66,27 +73,8 @@ class AgentEngineClient:
         )
 
     def _resolve_resource_name(self, agent_id: str) -> str:
-        """Resolve an agent ID or full resource name to a full resource name.
-
-        Args:
-            agent_id: The agent resource ID or full resource name.
-
-        Returns:
-            The full resource name.
-
-        Raises:
-            ValueError: If agent_id is empty or contains invalid characters.
-        """
-        if not agent_id or not agent_id.strip():
-            raise ValueError("agent_id must not be empty")
-        if any(c.isspace() or ord(c) < 32 for c in agent_id):
-            raise ValueError(f"agent_id contains invalid characters: {agent_id!r}")
-        if "/" not in agent_id:
-            return (
-                f"projects/{self.project}/locations/{self.location}/"
-                f"reasoningEngines/{agent_id}"
-            )
-        return agent_id
+        """Resolve an agent ID or full resource name using this client's project/location."""
+        return resolve_resource_name(self.project, self.location, agent_id)
 
     def list_agents(self) -> Iterator[ReasoningEngine]:
         """List all agents in the project.

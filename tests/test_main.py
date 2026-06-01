@@ -15,7 +15,13 @@ from vertexai._genai.types.common import (
 
 from agent_engine_cli import __version__
 from agent_engine_cli.config import ConfigurationError
-from agent_engine_cli.main import app
+from agent_engine_cli.main import (
+    _format_class_methods,
+    _parse_resource_name,
+    app,
+    format_timestamp,
+    get_id,
+)
 from tests.fakes import CreateAgentCall, FakeAgentEngineClient
 
 runner = CliRunner(env={"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"})
@@ -1250,3 +1256,267 @@ class TestEndpointOverrideOptions:
             base_url="https://staging.example.com",
             api_version="v1",
         )
+
+
+class TestHelpers:
+    """Tests for pure helper functions."""
+
+    def test_get_id_full_resource_name(self):
+        assert get_id("projects/p/locations/l/reasoningEngines/abc") == "abc"
+
+    def test_get_id_short_id(self):
+        assert get_id("abc") == "abc"
+
+    def test_get_id_none(self):
+        assert get_id(None) == ""
+
+    def test_get_id_empty(self):
+        assert get_id("") == ""
+
+    def test_format_timestamp_datetime(self):
+        assert format_timestamp(datetime(2024, 3, 15, 9, 30)) == "2024-03-15 09:30"
+
+    def test_format_timestamp_none(self):
+        assert format_timestamp(None) == ""
+
+    def test_parse_resource_name_valid(self):
+        result = _parse_resource_name(
+            "projects/my-proj/locations/us-central1/reasoningEngines/agent1"
+        )
+        assert result == ("my-proj", "us-central1")
+
+    def test_parse_resource_name_short_id(self):
+        assert _parse_resource_name("agent1") is None
+
+    def test_parse_resource_name_wrong_prefix(self):
+        assert _parse_resource_name("foo/bar/baz/qux/quux/corge") is None
+
+    def test_parse_resource_name_wrong_segment_count(self):
+        assert _parse_resource_name("projects/p/locations/l") is None
+
+    def test_format_class_methods_none(self):
+        methods, card = _format_class_methods(None)
+        assert methods == "N/A"
+        assert card == "N/A"
+
+    def test_format_class_methods_empty(self):
+        methods, card = _format_class_methods([])
+        assert methods == "N/A"
+        assert card == "N/A"
+
+    def test_format_class_methods_simple(self):
+        methods, card = _format_class_methods([{"name": "query"}])
+        assert "query" in methods
+        assert card == "N/A"
+
+    def test_format_class_methods_with_params(self):
+        methods, card = _format_class_methods(
+            [
+                {
+                    "name": "search",
+                    "parameters": {
+                        "properties": {
+                            "query": {"type": "string"},
+                            "limit": {"type": "integer"},
+                        },
+                        "required": ["query"],
+                    },
+                }
+            ]
+        )
+        assert "search(query: string*, limit: integer)" in methods
+
+    def test_format_class_methods_with_any_of(self):
+        methods, _ = _format_class_methods(
+            [
+                {
+                    "name": "fetch",
+                    "parameters": {
+                        "properties": {
+                            "url": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                        },
+                        "required": [],
+                    },
+                }
+            ]
+        )
+        assert "string|null" in methods
+
+    def test_format_class_methods_with_description(self):
+        methods, _ = _format_class_methods(
+            [
+                {"name": "greet", "description": "Say hello\nMore details here"},
+            ]
+        )
+        assert "greet" in methods
+        assert "Say hello" in methods
+        assert "More details" not in methods  # Only first line
+
+    def test_format_class_methods_extracts_agent_card(self):
+        _, card = _format_class_methods(
+            [
+                {
+                    "name": "query",
+                    "metadata": {"a2a_agent_card": '{"name": "MyAgent"}'},
+                }
+            ]
+        )
+        assert card == '{"name": "MyAgent"}'
+
+    def test_format_class_methods_skips_malformed(self):
+        """Malformed entries are skipped without crashing."""
+        methods, _ = _format_class_methods(
+            [
+                {"name": "good"},
+                {"not_name": "bad"},  # no name or method key
+                {"name": "also_good"},
+            ]
+        )
+        assert "good" in methods
+        assert "also_good" in methods
+        assert "bad" not in methods
+
+
+class TestDeleteWithResources:
+    """Test delete behavior when agent has associated resources."""
+
+    @patch("agent_engine_cli.main.get_client")
+    def test_delete_agent_with_sessions_no_force_fails(self, mock_get_client):
+        """Delete without --force fails when agent has sessions."""
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
+        mock_get_client.return_value = fake_client
+
+        agent_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
+        fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
+        fake_client._sessions[agent_name] = [Session(name=f"{agent_name}/sessions/s1")]
+
+        result = runner.invoke(
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "delete",
+                "agent123",
+                "--yes",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Error deleting agent" in result.stdout
+        assert agent_name in fake_client._agents  # Not deleted
+
+    @patch("agent_engine_cli.main.get_client")
+    def test_delete_agent_with_memories_no_force_fails(self, mock_get_client):
+        """Delete without --force fails when agent has memories."""
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
+        mock_get_client.return_value = fake_client
+
+        agent_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
+        fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
+        fake_client._memories[agent_name] = [
+            Memory(name=f"{agent_name}/memories/m1", fact="test")
+        ]
+
+        result = runner.invoke(
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "delete",
+                "agent123",
+                "--yes",
+            ],
+        )
+        assert result.exit_code == 1
+        assert agent_name in fake_client._agents  # Not deleted
+
+
+class TestGetAgentRegressions:
+    """Regression tests consolidated from standalone test files."""
+
+    @patch("agent_engine_cli.main.get_client")
+    def test_get_agent_with_none_class_methods(self, mock_get_client):
+        """spec.class_methods=None must not crash (regression)."""
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
+        mock_get_client.return_value = fake_client
+
+        agent_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent1"
+        )
+        fake_client._agents[agent_name] = ReasoningEngine(
+            name=agent_name,
+            display_name="Test Agent",
+            description="A test agent",
+            spec=ReasoningEngineSpec(
+                effective_identity="test-identity",
+                agent_framework="langchain",
+                class_methods=None,
+            ),
+            create_time=datetime(2024, 1, 1),
+            update_time=datetime(2024, 1, 2),
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "get",
+                "agent1",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Test Agent" in result.stdout
+        assert "Class Methods: N/A" in result.stdout
+
+    @patch("agent_engine_cli.main.get_client")
+    def test_get_agent_shows_effective_identity(self, mock_get_client):
+        """Get command shows effective identity."""
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
+        mock_get_client.return_value = fake_client
+
+        agent_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent1"
+        )
+        fake_client._agents[agent_name] = ReasoningEngine(
+            name=agent_name,
+            display_name="Test Agent",
+            description="A test agent",
+            spec=ReasoningEngineSpec(
+                effective_identity="service-account@test.iam.gserviceaccount.com",
+            ),
+            create_time=datetime(2024, 1, 1),
+            update_time=datetime(2024, 1, 2),
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "get",
+                "agent1",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Effective Identity" in result.stdout
+        assert "service-account@test.iam.gserviceaccount.com" in result.stdout

@@ -10,9 +10,11 @@ from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
+from google.api_core.exceptions import GoogleAPIError
+
 from agent_engine_cli import __version__
 from agent_engine_cli.client import AgentEngineClient
-from agent_engine_cli.config import resolve_project
+from agent_engine_cli.config import ConfigurationError, resolve_project
 from agent_engine_cli.console import console
 from agent_engine_cli.dependencies import get_client
 
@@ -65,7 +67,7 @@ def _resolve_config(agent_id: str | None = None) -> tuple[str, str]:
 
     try:
         project = resolve_project(state.project or fallback_project)
-    except Exception as e:
+    except ConfigurationError as e:
         console.print(f"[red]Error: {escape(str(e))}[/red]")
         raise typer.Exit(code=1)
 
@@ -200,6 +202,8 @@ def main(
     """
     Agent Engine CLI - Manage your agents with ease.
     """
+    # Reset all fields so stale values from prior invocations (e.g. in tests
+    # using CliRunner) never leak into subsequent commands.
     state.location = location
     state.project = project
     state.base_url = base_url
@@ -244,7 +248,7 @@ def list_agents() -> None:
             )
 
         console.print(table)
-    except Exception as e:
+    except (GoogleAPIError, ValueError) as e:
         console.print(f"[red]Error listing agents: {escape(str(e))}[/red]")
         raise typer.Exit(code=1)
 
@@ -292,7 +296,7 @@ def get_agent(
                 f"[bold]Agent Card:[/bold] {escape(str(agent_card))}"
             )
             console.print(Panel(content, title="Agent Details"))
-    except Exception as e:
+    except (GoogleAPIError, ValueError) as e:
         console.print(f"[red]Error getting agent: {escape(str(e))}[/red]")
         raise typer.Exit(code=1)
 
@@ -343,7 +347,7 @@ def create_agent(
         console.print("[green]Agent created successfully![/green]")
         console.print(f"Name: {get_id(agent.name)}")
         console.print(f"Resource: {agent.name or ''}")
-    except Exception as e:
+    except (GoogleAPIError, ValueError) as e:
         console.print(f"[red]Error creating agent: {escape(str(e))}[/red]")
         raise typer.Exit(code=1)
 
@@ -372,7 +376,7 @@ def delete_agent(
     try:
         client.delete_agent(agent_id, force=force)
         console.print(f"[red]Agent '{escape(agent_id)}' deleted.[/red]")
-    except Exception as e:
+    except (GoogleAPIError, ValueError) as e:
         console.print(f"[red]Error deleting agent: {escape(str(e))}[/red]")
         raise typer.Exit(code=1)
 
@@ -414,7 +418,7 @@ def list_sessions(
             return
 
         console.print(table)
-    except Exception as e:
+    except (GoogleAPIError, ValueError) as e:
         console.print(f"[red]Error listing sessions: {escape(str(e))}[/red]")
         raise typer.Exit(code=1)
 
@@ -459,7 +463,7 @@ def list_sandboxes(
             )
 
         console.print(table)
-    except Exception as e:
+    except (GoogleAPIError, ValueError) as e:
         console.print(f"[red]Error listing sandboxes: {escape(str(e))}[/red]")
         raise typer.Exit(code=1)
 
@@ -509,7 +513,7 @@ def list_memories(
             return
 
         console.print(table)
-    except Exception as e:
+    except (GoogleAPIError, ValueError) as e:
         console.print(f"[red]Error listing memories: {escape(str(e))}[/red]")
         raise typer.Exit(code=1)
 

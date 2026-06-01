@@ -70,9 +70,10 @@ def _install_httpx_logging_hooks() -> None:
         console.print(f"\n[dim]{'─' * 60}[/dim]")
         console.print(f"[bold yellow]► {request.method}[/bold yellow] {request.url}")
         for name, value in request.headers.items():
+            display_value = value
             if name.lower() == "authorization":
-                value = value[:20] + "…"
-            console.print(f"  [dim]{name}:[/dim] {value}")
+                display_value = "Bearer ***"
+            console.print(f"  [dim]{name}:[/dim] {display_value}")
         if request.content:
             try:
                 body = json.loads(request.content)
@@ -150,6 +151,55 @@ def _install_api_logging_hooks(debug: bool) -> None:
     _api_client.BaseApiClient.async_request_streamed = _logged_async_request_streamed
 
 
+def suppress_experimental_warnings() -> None:
+    """Suppress vertexai experimental warnings."""
+    try:
+        from vertexai._genai.constants import ExperimentalWarning
+
+        warnings.filterwarnings("ignore", category=ExperimentalWarning)
+    except ImportError:
+        pass
+
+
+def enable_debug_logging() -> None:
+    """Enable debug mode: setup logging, install hooks, print warning."""
+    console.print(
+        "[yellow]Warning: Debug mode logs HTTP requests/responses which "
+        "may include authentication tokens and credentials.[/yellow]"
+    )
+    _setup_debug_logging()
+    _install_api_logging_hooks(debug=True)
+    _install_httpx_logging_hooks()
+
+
+async def get_remote_agent(
+    project: str,
+    location: str,
+    agent_id: str,
+    base_url: str | None = None,
+    api_version: str | None = None,
+) -> Any:
+    """Create a vertexai client and fetch a remote agent.
+
+    Returns the AgentEngine wrapper object (not the unwrapped api_resource).
+    """
+    import vertexai
+
+    from agent_engine_cli.client import resolve_resource_name
+
+    http_options: dict[str, Any] = {"timeout": 10_000}
+    if api_version:
+        http_options["api_version"] = api_version
+    if base_url:
+        http_options["base_url"] = base_url
+
+    client = vertexai.Client(
+        project=project, location=location, http_options=http_options
+    )
+    resource_name = resolve_resource_name(project, location, agent_id)
+    return await asyncio.to_thread(client.agent_engines.get, name=resource_name)
+
+
 async def run_chat(
     project: str,
     location: str,
@@ -171,37 +221,12 @@ async def run_chat(
         base_url: Optional override for the Vertex AI base URL.
         api_version: Optional API version override.
     """
-    # Suppress vertexai experimental warnings
-    try:
-        from vertexai._genai.constants import ExperimentalWarning
-
-        warnings.filterwarnings("ignore", category=ExperimentalWarning)
-    except ImportError:
-        pass
+    suppress_experimental_warnings()
 
     if debug:
-        console.print(
-            "[yellow]Warning: Debug mode logs HTTP requests/responses which "
-            "may include authentication tokens and credentials.[/yellow]"
-        )
-        _setup_debug_logging()
-        _install_api_logging_hooks(debug=True)
+        enable_debug_logging()
 
-    import vertexai
-
-    # Get agent instance
-    http_options: dict[str, Any] = {"timeout": 10_000}
-    if api_version:
-        http_options["api_version"] = api_version
-    if base_url:
-        http_options["base_url"] = base_url
-    from agent_engine_cli.client import resolve_resource_name
-
-    client = vertexai.Client(
-        project=project, location=location, http_options=http_options
-    )
-    resource_name = resolve_resource_name(project, location, agent_id)
-    adk_app = await asyncio.to_thread(client.agent_engines.get, name=resource_name)
+    adk_app = await get_remote_agent(project, location, agent_id, base_url, api_version)
 
     # Create session
     session = await adk_app.async_create_session(user_id=user_id)
