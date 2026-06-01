@@ -4,11 +4,19 @@ from datetime import datetime
 from unittest.mock import patch
 
 from typer.testing import CliRunner
-from google.cloud.aiplatform_v1beta1.types import ReasoningEngine, ReasoningEngineSpec, Session, Memory
+from vertexai._genai.types.common import (
+    Memory,
+    ReasoningEngine,
+    ReasoningEngineSpec,
+    SandboxEnvironment,
+    SandboxState,
+    Session,
+)
 
+from agent_engine_cli import __version__
 from agent_engine_cli.config import ConfigurationError
 from agent_engine_cli.main import app
-from tests.fakes import CreateAgentCall, FakeAgentEngineClient, Sandbox, SandboxState
+from tests.fakes import CreateAgentCall, FakeAgentEngineClient
 
 runner = CliRunner(env={"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"})
 
@@ -16,7 +24,7 @@ runner = CliRunner(env={"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"})
 def test_version():
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "Agent Engine CLI v0.1.6" in result.stdout
+    assert f"Agent Engine CLI v{__version__}" in result.stdout
 
 
 def test_global_options_in_help():
@@ -30,30 +38,39 @@ def test_global_options_in_help():
 
 
 class TestListCommand:
-
     @patch("agent_engine_cli.main.get_client")
     def test_list_no_agents(self, mock_get_client):
         """Test list command with no agents."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        # Global options must come before the command in some Typer configurations, 
+        # Global options must come before the command in some Typer configurations,
         # but here we can just ensure they are handled correctly.
-        result = runner.invoke(app, ["--project", "test-project", "--location", "us-central1", "list"])
+        result = runner.invoke(
+            app, ["--project", "test-project", "--location", "us-central1", "list"]
+        )
         assert result.exit_code == 0
         assert "No agents found" in result.stdout
 
     @patch("agent_engine_cli.main.get_client")
     def test_list_with_agents(self, mock_get_client):
         """Test list command with agents."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent = fake_client.create_agent(display_name="Test Agent", identity_type="agent_identity")
+        agent = fake_client.create_agent(
+            display_name="Test Agent", identity_type="agent_identity"
+        )
         agent.create_time = datetime(2024, 1, 1, 12, 30, 0)
         agent.update_time = datetime(2024, 1, 2, 14, 45, 0)
 
-        result = runner.invoke(app, ["--project", "test-project", "--location", "us-central1", "list"])
+        result = runner.invoke(
+            app, ["--project", "test-project", "--location", "us-central1", "list"]
+        )
         assert result.exit_code == 0
         assert "agent-1" in result.stdout
         assert "Test Agent" in result.stdout
@@ -70,14 +87,26 @@ class TestGetCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_get_agent(self, mock_get_client):
         """Test get command."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent = fake_client.create_agent(display_name="Test Agent", identity_type="agent_identity")
+        agent = fake_client.create_agent(
+            display_name="Test Agent", identity_type="agent_identity"
+        )
         agent.description = "A test agent"
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "get", agent.name.split("/")[-1]]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "get",
+                agent.name.split("/")[-1],
+            ],
         )
         assert result.exit_code == 0
         assert "Test Agent" in result.stdout
@@ -87,14 +116,27 @@ class TestGetCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_get_agent_full_output(self, mock_get_client):
         """Test get command with --full flag."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent = fake_client.create_agent(display_name="Test Agent", identity_type="agent_identity")
+        agent = fake_client.create_agent(
+            display_name="Test Agent", identity_type="agent_identity"
+        )
         agent.description = "A test agent"
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "get", agent.name.split("/")[-1], "--full"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "get",
+                agent.name.split("/")[-1],
+                "--full",
+            ],
         )
         assert result.exit_code == 0
         assert "resource_name" in result.stdout
@@ -110,11 +152,21 @@ class TestCreateCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_create_agent(self, mock_get_client):
         """Test create command with default agent_identity type."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "create", "My Agent"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "create",
+                "My Agent",
+            ],
         )
         assert result.exit_code == 0
         assert "Agent created successfully" in result.stdout
@@ -130,11 +182,23 @@ class TestCreateCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_create_agent_with_service_account_identity(self, mock_get_client):
         """Test create command with service_account identity type."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "create", "My Agent", "--identity", "service_account"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "create",
+                "My Agent",
+                "--identity",
+                "service_account",
+            ],
         )
         assert result.exit_code == 0
 
@@ -148,12 +212,25 @@ class TestCreateCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_create_agent_with_custom_service_account(self, mock_get_client):
         """Test create command with a specific service account."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "create", "My Agent",
-                  "--identity", "service_account", "--service-account", "my-sa@proj.iam.gserviceaccount.com"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "create",
+                "My Agent",
+                "--identity",
+                "service_account",
+                "--service-account",
+                "my-sa@proj.iam.gserviceaccount.com",
+            ],
         )
         assert result.exit_code == 0
 
@@ -167,12 +244,23 @@ class TestCreateCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_create_agent_with_image_uri(self, mock_get_client):
         """Test create command with a container image URI."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "create", "My Agent",
-                  "--image-uri", "us-central1-docker.pkg.dev/my-project/my-repo/my-image:latest"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "create",
+                "My Agent",
+                "--image-uri",
+                "us-central1-docker.pkg.dev/my-project/my-repo/my-image:latest",
+            ],
         )
         assert result.exit_code == 0
 
@@ -187,12 +275,23 @@ class TestCreateCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_create_agent_with_framework(self, mock_get_client):
         """Test create command with an agent framework."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "create", "My Agent",
-                  "--agent-framework", "google-adk"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "create",
+                "My Agent",
+                "--agent-framework",
+                "google-adk",
+            ],
         )
         assert result.exit_code == 0
 
@@ -207,13 +306,25 @@ class TestCreateCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_create_agent_with_image_uri_and_framework(self, mock_get_client):
         """Test create command combining --image-uri and --agent-framework."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "create", "My Agent",
-                  "--image-uri", "us-central1-docker.pkg.dev/my-project/my-repo/my-image:latest",
-                  "--agent-framework", "langchain"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "create",
+                "My Agent",
+                "--image-uri",
+                "us-central1-docker.pkg.dev/my-project/my-repo/my-image:latest",
+                "--agent-framework",
+                "langchain",
+            ],
         )
         assert result.exit_code == 0
 
@@ -238,15 +349,26 @@ class TestDeleteCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_delete_agent_with_confirmation(self, mock_get_client):
         """Test delete command with confirmation prompt."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent_name = "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        agent_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
         fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
 
         result = runner.invoke(
             app,
-            ["--project", "test-project", "--location", "us-central1", "delete", "agent123"],
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "delete",
+                "agent123",
+            ],
             input="y\n",
         )
         assert result.exit_code == 0
@@ -256,15 +378,26 @@ class TestDeleteCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_delete_agent_abort(self, mock_get_client):
         """Test delete command when user aborts."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent_name = "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        agent_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
         fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
 
         result = runner.invoke(
             app,
-            ["--project", "test-project", "--location", "us-central1", "delete", "agent123"],
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "delete",
+                "agent123",
+            ],
             input="n\n",
         )
         assert result.exit_code == 0
@@ -274,15 +407,27 @@ class TestDeleteCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_delete_agent_with_yes_flag(self, mock_get_client):
         """Test delete command with --yes flag to skip confirmation."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent_name = "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        agent_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
         fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
 
         result = runner.invoke(
             app,
-            ["--project", "test-project", "--location", "us-central1", "delete", "agent123", "--yes"],
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "delete",
+                "agent123",
+                "--yes",
+            ],
         )
         assert result.exit_code == 0
         assert "deleted" in result.stdout
@@ -291,16 +436,29 @@ class TestDeleteCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_delete_agent_with_force(self, mock_get_client):
         """Test delete command with --force flag."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent_name = "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        agent_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
         fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
         fake_client._sessions[agent_name] = [Session(name=f"{agent_name}/sessions/s1")]
 
         result = runner.invoke(
             app,
-            ["--project", "test-project", "--location", "us-central1", "delete", "agent123", "--yes", "--force"],
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "delete",
+                "agent123",
+                "--yes",
+                "--force",
+            ],
         )
         assert result.exit_code == 0
         assert agent_name not in fake_client._agents
@@ -308,12 +466,22 @@ class TestDeleteCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_delete_agent_error(self, mock_get_client):
         """Test delete command when an error occurs (e.g. not found)."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
         result = runner.invoke(
             app,
-            ["--project", "test-project", "--location", "us-central1", "delete", "agent123", "--yes"],
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "delete",
+                "agent123",
+                "--yes",
+            ],
         )
         assert result.exit_code == 1
         assert "Error deleting agent" in result.stdout
@@ -332,7 +500,14 @@ class TestChatCommand:
         """Test chat command invokes run_chat with correct arguments."""
         result = runner.invoke(
             app,
-            ["--project", "test-project", "--location", "us-central1", "chat", "agent123"],
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "chat",
+                "agent123",
+            ],
         )
         assert result.exit_code == 0
         mock_run_chat.assert_called_once_with(
@@ -350,8 +525,17 @@ class TestChatCommand:
         """Test chat command with custom user and debug flag."""
         result = runner.invoke(
             app,
-            ["--project", "test-project", "--location", "us-central1", "chat", "agent123",
-             "--user", "my-user", "--debug"],
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "chat",
+                "agent123",
+                "--user",
+                "my-user",
+                "--debug",
+            ],
         )
         assert result.exit_code == 0
         mock_run_chat.assert_called_once_with(
@@ -371,7 +555,14 @@ class TestChatCommand:
 
         result = runner.invoke(
             app,
-            ["--project", "test-project", "--location", "us-central1", "chat", "agent123"],
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "chat",
+                "agent123",
+            ],
         )
         assert result.exit_code == 1
         assert "Error in chat session" in result.stdout
@@ -385,13 +576,20 @@ class TestADCFallback:
     def test_list_uses_adc_project(self, mock_resolve, mock_get_client):
         """Test list command uses ADC project when --project not provided."""
         mock_resolve.return_value = "adc-project"
-        fake_client = FakeAgentEngineClient(project="adc-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="adc-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
         result = runner.invoke(app, ["--location", "us-central1", "list"])
         assert result.exit_code == 0
         mock_resolve.assert_called_once_with(None)
-        mock_get_client.assert_called_once_with(project="adc-project", location="us-central1", base_url=None, api_version=None)
+        mock_get_client.assert_called_once_with(
+            project="adc-project",
+            location="us-central1",
+            base_url=None,
+            api_version=None,
+        )
 
     @patch("agent_engine_cli.main.resolve_project")
     def test_list_error_when_no_project(self, mock_resolve):
@@ -407,10 +605,14 @@ class TestADCFallback:
     def test_get_uses_adc_project(self, mock_resolve, mock_get_client):
         """Test get command uses ADC project when --project not provided."""
         mock_resolve.return_value = "adc-project"
-        fake_client = FakeAgentEngineClient(project="adc-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="adc-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent_name = "projects/adc-project/locations/us-central1/reasoningEngines/agent1"
+        agent_name = (
+            "projects/adc-project/locations/us-central1/reasoningEngines/agent1"
+        )
         fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
 
         result = runner.invoke(app, ["--location", "us-central1", "get", "agent1"])
@@ -422,10 +624,14 @@ class TestADCFallback:
     def test_create_uses_adc_project(self, mock_resolve, mock_get_client):
         """Test create command uses ADC project when --project not provided."""
         mock_resolve.return_value = "adc-project"
-        fake_client = FakeAgentEngineClient(project="adc-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="adc-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        result = runner.invoke(app, ["--location", "us-central1", "create", "Test Agent"])
+        result = runner.invoke(
+            app, ["--location", "us-central1", "create", "Test Agent"]
+        )
         assert result.exit_code == 0
         mock_resolve.assert_called_once_with(None)
 
@@ -434,13 +640,19 @@ class TestADCFallback:
     def test_delete_uses_adc_project(self, mock_resolve, mock_get_client):
         """Test delete command uses ADC project when --project not provided."""
         mock_resolve.return_value = "adc-project"
-        fake_client = FakeAgentEngineClient(project="adc-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="adc-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent_name = "projects/adc-project/locations/us-central1/reasoningEngines/agent1"
+        agent_name = (
+            "projects/adc-project/locations/us-central1/reasoningEngines/agent1"
+        )
         fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
 
-        result = runner.invoke(app, ["--location", "us-central1", "delete", "agent1", "--yes"])
+        result = runner.invoke(
+            app, ["--location", "us-central1", "delete", "agent1", "--yes"]
+        )
         assert result.exit_code == 0
         mock_resolve.assert_called_once_with(None)
 
@@ -468,10 +680,14 @@ class TestADCFallback:
     def test_explicit_project_still_works(self, mock_resolve, mock_get_client):
         """Test that explicit --project still works and is passed to resolve_project."""
         mock_resolve.return_value = "explicit-project"
-        fake_client = FakeAgentEngineClient(project="explicit-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="explicit-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        result = runner.invoke(app, ["--project", "explicit-project", "--location", "us-central1", "list"])
+        result = runner.invoke(
+            app, ["--project", "explicit-project", "--location", "us-central1", "list"]
+        )
         assert result.exit_code == 0
         mock_resolve.assert_called_once_with("explicit-project")
 
@@ -486,13 +702,26 @@ class TestSessionsListCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_sessions_list_no_sessions(self, mock_get_client):
         """Test sessions list with no sessions."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent = fake_client.create_agent(display_name="Test Agent", identity_type="agent_identity")
+        agent = fake_client.create_agent(
+            display_name="Test Agent", identity_type="agent_identity"
+        )
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "sessions", "list", agent.name]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "sessions",
+                "list",
+                agent.name,
+            ],
         )
         assert result.exit_code == 0
         assert "No sessions found" in result.stdout
@@ -500,10 +729,14 @@ class TestSessionsListCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_sessions_list_with_sessions(self, mock_get_client):
         """Test sessions list with sessions."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent_name = "projects/test-project/locations/us-central1/reasoningEngines/agent1"
+        agent_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent1"
+        )
         fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
 
         session = Session(
@@ -515,7 +748,16 @@ class TestSessionsListCommand:
         fake_client._sessions[agent_name] = [session]
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "sessions", "list", "agent1"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "sessions",
+                "list",
+                "agent1",
+            ],
         )
         assert result.exit_code == 0
         assert "session123" in result.stdout
@@ -525,11 +767,22 @@ class TestSessionsListCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_sessions_list_error(self, mock_get_client):
         """Test sessions list when an error occurs."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "sessions", "list", "agent123"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "sessions",
+                "list",
+                "agent123",
+            ],
         )
         assert result.exit_code == 1
         assert "Error listing sessions" in result.stdout
@@ -539,16 +792,27 @@ class TestSessionsListCommand:
     def test_sessions_list_uses_adc_project(self, mock_resolve, mock_get_client):
         """Test sessions list uses ADC project when --project not provided."""
         mock_resolve.return_value = "adc-project"
-        fake_client = FakeAgentEngineClient(project="adc-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="adc-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent_name = "projects/adc-project/locations/us-central1/reasoningEngines/agent1"
+        agent_name = (
+            "projects/adc-project/locations/us-central1/reasoningEngines/agent1"
+        )
         fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
 
-        result = runner.invoke(app, ["--location", "us-central1", "sessions", "list", "agent1"])
+        result = runner.invoke(
+            app, ["--location", "us-central1", "sessions", "list", "agent1"]
+        )
         assert result.exit_code == 0
         mock_resolve.assert_called_once_with(None)
-        mock_get_client.assert_called_once_with(project="adc-project", location="us-central1", base_url=None, api_version=None)
+        mock_get_client.assert_called_once_with(
+            project="adc-project",
+            location="us-central1",
+            base_url=None,
+            api_version=None,
+        )
 
 
 class TestSandboxesListCommand:
@@ -561,13 +825,26 @@ class TestSandboxesListCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_sandboxes_list_no_sandboxes(self, mock_get_client):
         """Test sandboxes list with no sandboxes."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent = fake_client.create_agent(display_name="Test Agent", identity_type="agent_identity")
+        agent = fake_client.create_agent(
+            display_name="Test Agent", identity_type="agent_identity"
+        )
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "sandboxes", "list", agent.name]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "sandboxes",
+                "list",
+                agent.name,
+            ],
         )
         assert result.exit_code == 0
         assert "No sandboxes found" in result.stdout
@@ -575,23 +852,36 @@ class TestSandboxesListCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_sandboxes_list_with_sandboxes(self, mock_get_client):
         """Test sandboxes list with sandboxes."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent_name = "projects/test-project/locations/us-central1/reasoningEngines/agent1"
+        agent_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent1"
+        )
         fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
 
-        sandbox = Sandbox(
+        sandbox = SandboxEnvironment(
             name=f"{agent_name}/sandboxes/sandbox123",
             display_name="my_sandbox",
             state=SandboxState.STATE_RUNNING,
             create_time=datetime(2024, 2, 20, 14, 30, 0),
-            expire_time=datetime(2024, 2, 21, 14, 30, 0)
+            expire_time=datetime(2024, 2, 21, 14, 30, 0),
         )
         fake_client._sandboxes[agent_name] = [sandbox]
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "sandboxes", "list", "agent1"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "sandboxes",
+                "list",
+                "agent1",
+            ],
         )
         assert result.exit_code == 0
         assert "sandbox123" in result.stdout
@@ -602,11 +892,22 @@ class TestSandboxesListCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_sandboxes_list_error(self, mock_get_client):
         """Test sandboxes list when an error occurs."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "sandboxes", "list", "agent123"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "sandboxes",
+                "list",
+                "agent123",
+            ],
         )
         assert result.exit_code == 1
         assert "Error listing sandboxes" in result.stdout
@@ -616,16 +917,27 @@ class TestSandboxesListCommand:
     def test_sandboxes_list_uses_adc_project(self, mock_resolve, mock_get_client):
         """Test sandboxes list uses ADC project when --project not provided."""
         mock_resolve.return_value = "adc-project"
-        fake_client = FakeAgentEngineClient(project="adc-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="adc-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent_name = "projects/adc-project/locations/us-central1/reasoningEngines/agent1"
+        agent_name = (
+            "projects/adc-project/locations/us-central1/reasoningEngines/agent1"
+        )
         fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
 
-        result = runner.invoke(app, ["--location", "us-central1", "sandboxes", "list", "agent1"])
+        result = runner.invoke(
+            app, ["--location", "us-central1", "sandboxes", "list", "agent1"]
+        )
         assert result.exit_code == 0
         mock_resolve.assert_called_once_with(None)
-        mock_get_client.assert_called_once_with(project="adc-project", location="us-central1", base_url=None, api_version=None)
+        mock_get_client.assert_called_once_with(
+            project="adc-project",
+            location="us-central1",
+            base_url=None,
+            api_version=None,
+        )
 
 
 class TestMemoriesListCommand:
@@ -638,13 +950,26 @@ class TestMemoriesListCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_memories_list_no_memories(self, mock_get_client):
         """Test memories list with no memories."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent = fake_client.create_agent(display_name="Test Agent", identity_type="agent_identity")
+        agent = fake_client.create_agent(
+            display_name="Test Agent", identity_type="agent_identity"
+        )
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "memories", "list", agent.name]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "memories",
+                "list",
+                agent.name,
+            ],
         )
         assert result.exit_code == 0
         assert "No memories found" in result.stdout
@@ -652,10 +977,14 @@ class TestMemoriesListCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_memories_list_with_memories(self, mock_get_client):
         """Test memories list with memories."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent_name = "projects/test-project/locations/us-central1/reasoningEngines/agent1"
+        agent_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent1"
+        )
         fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
 
         memory = Memory(
@@ -664,12 +993,21 @@ class TestMemoriesListCommand:
             scope={"user_id": "user-123"},
             fact="User prefers dark mode",
             create_time=datetime(2024, 3, 10, 9, 15, 0),
-            expire_time=datetime(2024, 4, 10, 9, 15, 0)
+            expire_time=datetime(2024, 4, 10, 9, 15, 0),
         )
         fake_client._memories[agent_name] = [memory]
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "memories", "list", "agent1"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "memories",
+                "list",
+                "agent1",
+            ],
         )
         assert result.exit_code == 0
         assert "memory123" in result.stdout
@@ -680,11 +1018,22 @@ class TestMemoriesListCommand:
     @patch("agent_engine_cli.main.get_client")
     def test_memories_list_error(self, mock_get_client):
         """Test memories list when an error occurs (e.g. agent not found)."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
         result = runner.invoke(
-            app, ["--project", "test-project", "--location", "us-central1", "memories", "list", "agent123"]
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "memories",
+                "list",
+                "agent123",
+            ],
         )
         assert result.exit_code == 1
         assert "Error listing memories" in result.stdout
@@ -694,16 +1043,27 @@ class TestMemoriesListCommand:
     def test_memories_list_uses_adc_project(self, mock_resolve, mock_get_client):
         """Test memories list uses ADC project when --project not provided."""
         mock_resolve.return_value = "adc-project"
-        fake_client = FakeAgentEngineClient(project="adc-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="adc-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        agent_name = "projects/adc-project/locations/us-central1/reasoningEngines/agent1"
+        agent_name = (
+            "projects/adc-project/locations/us-central1/reasoningEngines/agent1"
+        )
         fake_client._agents[agent_name] = ReasoningEngine(name=agent_name)
 
-        result = runner.invoke(app, ["--location", "us-central1", "memories", "list", "agent1"])
+        result = runner.invoke(
+            app, ["--location", "us-central1", "memories", "list", "agent1"]
+        )
         assert result.exit_code == 0
         mock_resolve.assert_called_once_with(None)
-        mock_get_client.assert_called_once_with(project="adc-project", location="us-central1", base_url=None, api_version=None)
+        mock_get_client.assert_called_once_with(
+            project="adc-project",
+            location="us-central1",
+            base_url=None,
+            api_version=None,
+        )
 
 
 class TestA2AChatCommand:
@@ -719,7 +1079,14 @@ class TestA2AChatCommand:
         """Test a2a-chat command invokes run_a2a_chat with correct arguments."""
         result = runner.invoke(
             app,
-            ["--project", "test-project", "--location", "us-central1", "a2a-chat", "agent123"],
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "a2a-chat",
+                "agent123",
+            ],
         )
         assert result.exit_code == 0
         mock_run_a2a_chat.assert_called_once_with(
@@ -736,7 +1103,15 @@ class TestA2AChatCommand:
         """Test a2a-chat command with debug flag."""
         result = runner.invoke(
             app,
-            ["--project", "test-project", "--location", "us-central1", "a2a-chat", "agent123", "--debug"],
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "a2a-chat",
+                "agent123",
+                "--debug",
+            ],
         )
         assert result.exit_code == 0
         mock_run_a2a_chat.assert_called_once_with(
@@ -755,7 +1130,14 @@ class TestA2AChatCommand:
 
         result = runner.invoke(
             app,
-            ["--project", "test-project", "--location", "us-central1", "a2a-chat", "agent123"],
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "a2a-chat",
+                "agent123",
+            ],
         )
         assert result.exit_code == 1
         assert "Error in A2A chat session" in result.stdout
@@ -781,12 +1163,21 @@ class TestA2AChatCommand:
     @patch("agent_engine_cli.a2a_chat.run_a2a_chat")
     def test_a2a_chat_with_custom_endpoint_options(self, mock_run_a2a_chat):
         """Test a2a-chat command passes custom base_url and api_version."""
-        result = runner.invoke(app, [
-            "--project", "test-project", "--location", "us-central1",
-            "--base-url", "https://staging.example.com",
-            "--api-version", "v1",
-            "a2a-chat", "agent123"
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "--base-url",
+                "https://staging.example.com",
+                "--api-version",
+                "v1",
+                "a2a-chat",
+                "agent123",
+            ],
+        )
         assert result.exit_code == 0
         mock_run_a2a_chat.assert_called_once_with(
             project="test-project",
@@ -801,19 +1192,28 @@ class TestA2AChatCommand:
 class TestEndpointOverrideOptions:
     """Tests for --base-url and --api-version options."""
 
-
     @patch("agent_engine_cli.main.get_client")
     def test_list_with_custom_endpoint_options(self, mock_get_client):
         """Test list command passes custom base_url and api_version."""
-        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        fake_client = FakeAgentEngineClient(
+            project="test-project", location="us-central1"
+        )
         mock_get_client.return_value = fake_client
 
-        result = runner.invoke(app, [
-            "--project", "test-project", "--location", "us-central1",
-            "--base-url", "https://custom.example.com",
-            "--api-version", "v1",
-            "list"
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "--base-url",
+                "https://custom.example.com",
+                "--api-version",
+                "v1",
+                "list",
+            ],
+        )
         assert result.exit_code == 0
         mock_get_client.assert_called_once_with(
             project="test-project",
@@ -825,12 +1225,21 @@ class TestEndpointOverrideOptions:
     @patch("agent_engine_cli.chat.run_chat")
     def test_chat_with_custom_endpoint_options(self, mock_run_chat):
         """Test chat command passes custom base_url and api_version to run_chat."""
-        result = runner.invoke(app, [
-            "--project", "test-project", "--location", "us-central1",
-            "--base-url", "https://staging.example.com",
-            "--api-version", "v1",
-            "chat", "agent123"
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "--project",
+                "test-project",
+                "--location",
+                "us-central1",
+                "--base-url",
+                "https://staging.example.com",
+                "--api-version",
+                "v1",
+                "chat",
+                "agent123",
+            ],
+        )
         assert result.exit_code == 0
         mock_run_chat.assert_called_once_with(
             project="test-project",

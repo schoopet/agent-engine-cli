@@ -6,6 +6,12 @@ from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
     from vertexai._genai.client import Client as _VertexClient
+    from vertexai._genai.types.common import (
+        Memory,
+        ReasoningEngine,
+        SandboxEnvironment,
+        Session,
+    )
 
 
 def resolve_resource_name(project: str, location: str, agent_id: str) -> str:
@@ -82,27 +88,26 @@ class AgentEngineClient:
             )
         return agent_id
 
-    def list_agents(self) -> Iterator[Any]:
+    def list_agents(self) -> Iterator[ReasoningEngine]:
         """List all agents in the project.
 
         Returns:
-            Iterator of AgentEngine api_resource instances (v1beta1)
+            Iterator of ReasoningEngine instances
         """
         return (agent.api_resource for agent in self._client.agent_engines.list())
 
-    def get_agent(self, agent_id: str) -> Any:
+    def get_agent(self, agent_id: str) -> ReasoningEngine:
         """Get details for a specific agent.
 
         Args:
             agent_id: The agent resource ID or full resource name
 
         Returns:
-            AgentEngine instance with agent details
+            ReasoningEngine with agent details
         """
         resource_name = self._resolve_resource_name(agent_id)
-
         agent = self._client.agent_engines.get(name=resource_name)
-        return getattr(agent, "api_resource", agent)
+        return agent.api_resource
 
     def create_agent(
         self,
@@ -111,7 +116,7 @@ class AgentEngineClient:
         service_account: str | None = None,
         image_uri: str | None = None,
         agent_framework: str | None = None,
-    ) -> Any:
+    ) -> ReasoningEngine:
         """Create a new agent without deploying code.
 
         Args:
@@ -122,7 +127,7 @@ class AgentEngineClient:
             agent_framework: OSS framework used to build the agent
 
         Returns:
-            The created agent's api_resource
+            The created agent's ReasoningEngine
         """
         from vertexai import types
 
@@ -156,40 +161,40 @@ class AgentEngineClient:
         resource_name = self._resolve_resource_name(agent_id)
         self._client.agent_engines.delete(name=resource_name, force=force)
 
-    def list_sessions(self, agent_id: str) -> Iterator:
+    def list_sessions(self, agent_id: str) -> Iterator[Session]:
         """List all sessions for an agent.
 
         Args:
             agent_id: The agent resource ID or full resource name
 
         Returns:
-            Iterator of session objects
+            Iterator of Session instances
         """
         resource_name = self._resolve_resource_name(agent_id)
 
         return self._client.agent_engines.list_sessions(name=resource_name)
 
-    def list_sandboxes(self, agent_id: str) -> Iterator[Any]:
+    def list_sandboxes(self, agent_id: str) -> Iterator[SandboxEnvironment]:
         """List all sandboxes for an agent.
 
         Args:
             agent_id: The agent resource ID or full resource name
 
         Returns:
-            Iterator of sandbox objects
+            Iterator of SandboxEnvironment instances
         """
         resource_name = self._resolve_resource_name(agent_id)
 
         return self._client.agent_engines.sandboxes.list(name=resource_name)
 
-    def list_memories(self, agent_id: str) -> Iterator[Any]:
+    def list_memories(self, agent_id: str) -> Iterator[Memory]:
         """List all memories for an agent.
 
         Args:
             agent_id: The agent resource ID or full resource name
 
         Returns:
-            Iterator of memory objects
+            Iterator of Memory instances
         """
         resource_name = self._resolve_resource_name(agent_id)
 

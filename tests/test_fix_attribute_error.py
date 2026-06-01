@@ -1,5 +1,11 @@
-from unittest.mock import MagicMock, patch
+"""Regression test: spec.class_methods=None must not crash."""
+
+from datetime import datetime
+from unittest.mock import patch
+
 from typer.testing import CliRunner
+from vertexai._genai.types.common import ReasoningEngine, ReasoningEngineSpec
+
 from agent_engine_cli.main import app
 
 runner = CliRunner(env={"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"})
@@ -8,25 +14,24 @@ runner = CliRunner(env={"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"})
 @patch("agent_engine_cli.main.get_client")
 def test_get_agent_with_none_class_methods(mock_get_client):
     """Test get command when spec.class_methods is None (regression test)."""
+    from tests.fakes import FakeAgentEngineClient
 
-    # Mock spec with class_methods=None
-    mock_spec = MagicMock()
-    mock_spec.effective_identity = "test-identity"
-    mock_spec.agent_framework = "langchain"
-    mock_spec.class_methods = None  # This was causing 'NoneType' object is not iterable
+    fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+    mock_get_client.return_value = fake_client
 
-    mock_agent = MagicMock()
-    mock_agent.name = "projects/test/locations/us-central1/reasoningEngines/agent1"
-    mock_agent.display_name = "Test Agent"
-    mock_agent.description = "A test agent"
-    mock_agent.create_time = "2024-01-01T00:00:00Z"
-    mock_agent.update_time = "2024-01-02T00:00:00Z"
-    mock_agent.api_resource.spec = mock_spec
-    mock_agent.spec = mock_spec
-
-    mock_client = MagicMock()
-    mock_client.get_agent.return_value = mock_agent
-    mock_get_client.return_value = mock_client
+    agent_name = "projects/test-project/locations/us-central1/reasoningEngines/agent1"
+    fake_client._agents[agent_name] = ReasoningEngine(
+        name=agent_name,
+        display_name="Test Agent",
+        description="A test agent",
+        spec=ReasoningEngineSpec(
+            effective_identity="test-identity",
+            agent_framework="langchain",
+            class_methods=None,
+        ),
+        create_time=datetime(2024, 1, 1),
+        update_time=datetime(2024, 1, 2),
+    )
 
     result = runner.invoke(
         app, ["--project", "test-project", "--location", "us-central1", "get", "agent1"]

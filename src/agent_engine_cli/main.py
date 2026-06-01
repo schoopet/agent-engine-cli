@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-from collections.abc import MutableMapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Literal
@@ -84,68 +83,43 @@ def get_ready_client(agent_id: str | None = None) -> AgentEngineClient:
     )
 
 
-def get_id(resource: object) -> str:
-    """Extract ID from a resource name string or object."""
-    name = (
-        resource
-        if isinstance(resource, str)
-        else (getattr(resource, "name", None) or getattr(resource, "resource_name", ""))
-    )
-    return name.split("/")[-1] if name else ""
+def get_id(name: str | None) -> str:
+    """Extract the trailing ID segment from a resource name."""
+    if not name:
+        return ""
+    return name.split("/")[-1]
 
 
-def format_timestamp(value: object) -> str:
-    """Format a timestamp value for display, returning '' if unavailable."""
+def format_timestamp(value: datetime | None) -> str:
+    """Format a datetime for display, returning '' if None."""
     if value is None:
         return ""
-    if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%d %H:%M")
-    # Handle proto Timestamp objects that have a strftime-like interface
-    strftime_fn = getattr(value, "strftime", None)
-    if strftime_fn is not None:
-        return strftime_fn("%Y-%m-%d %H:%M")
-    return ""
+    return value.strftime("%Y-%m-%d %H:%M")
 
 
-def _get_agent_spec(agent: object) -> object | None:
-    """Extract the spec from an agent, checking api_resource first."""
-    api_resource = getattr(agent, "api_resource", None)
-    if api_resource is not None:
-        spec = getattr(api_resource, "spec", None)
-        if spec:
-            return spec
-    spec = getattr(agent, "spec", None)
-    if spec:
-        return spec
-    return None
+def _format_class_methods(class_methods: list[dict] | None) -> tuple[str, str]:
+    """Extract formatted class methods and agent card from a spec's class_methods.
 
-
-def _format_class_methods(spec: object) -> tuple[str, str]:
-    """Extract formatted class methods and agent card from a spec.
+    Args:
+        class_methods: The list of method dicts from spec.class_methods.
 
     Returns:
         A tuple of (class_methods_str, agent_card_str) with "N/A" as defaults.
     """
-    raw_methods = getattr(spec, "class_methods", []) or []
+    if not class_methods:
+        return "N/A", "N/A"
+
     method_names: list[str] = []
     agent_card = "N/A"
 
-    for m in raw_methods:
+    for m in class_methods:
         try:
-            m_name = (
-                getattr(m, "name", None)
-                or getattr(m, "method", None)
-                or (m.get("name") if hasattr(m, "get") else None)
-                or (m.get("method") if hasattr(m, "get") else None)
-            )
+            m_name = m.get("name") or m.get("method")
             if not m_name:
                 continue
 
             # Extract parameters and their types
-            m_params = getattr(m, "parameters", None) or (
-                m.get("parameters") if hasattr(m, "get") else None
-            )
-
+            m_params = m.get("parameters")
             if m_params and isinstance(m_params, dict):
                 properties = m_params.get("properties", {})
                 required = m_params.get("required", [])
@@ -172,30 +146,24 @@ def _format_class_methods(spec: object) -> tuple[str, str]:
                 method_names.append(str(m_name))
 
             # Extract and add description
-            m_desc = getattr(m, "description", None) or (
-                m.get("description") if hasattr(m, "get") else None
-            )
+            m_desc = m.get("description")
             if m_desc:
                 m_desc_clean = m_desc.strip().split("\n")[0]
                 method_names.append(f"    {m_desc_clean}")
 
             if agent_card == "N/A":
-                m_metadata = getattr(m, "metadata", None) or (
-                    m.get("metadata") if hasattr(m, "get") else None
-                )
-                if m_metadata:
-                    card = getattr(m_metadata, "get", lambda k, d: None)(
-                        "a2a_agent_card", None
-                    ) or getattr(m_metadata, "get", lambda k, d: None)(
-                        "agent_card", None
+                m_metadata = m.get("metadata")
+                if m_metadata and isinstance(m_metadata, dict):
+                    card = m_metadata.get("a2a_agent_card") or m_metadata.get(
+                        "agent_card"
                     )
                     if card:
                         agent_card = card
-        except (TypeError, KeyError, AttributeError) as e:
+        except (TypeError, KeyError) as e:
             logger.debug("Skipping malformed class method entry: %s", e)
 
-    class_methods = ("\n  " + "\n  ".join(method_names)) if method_names else "N/A"
-    return class_methods, agent_card
+    formatted = ("\n  " + "\n  ".join(method_names)) if method_names else "N/A"
+    return formatted, agent_card
 
 
 app = typer.Typer(
@@ -263,21 +231,15 @@ def list_agents() -> None:
         table.add_column("Identity", overflow="fold")
 
         for agent in agents:
-            name = get_id(agent)
-            display_name = getattr(agent, "display_name", "") or ""
-            create_time = format_timestamp(getattr(agent, "create_time", None))
-            update_time = format_timestamp(getattr(agent, "update_time", None))
-
             effective_identity = "N/A"
-            spec = getattr(agent, "spec", None)
-            if spec:
-                effective_identity = getattr(spec, "effective_identity", "N/A")
+            if agent.spec and agent.spec.effective_identity:
+                effective_identity = agent.spec.effective_identity
 
             table.add_row(
-                escape(name),
-                escape(display_name),
-                create_time,
-                update_time,
+                escape(get_id(agent.name)),
+                escape(agent.display_name or ""),
+                format_timestamp(agent.create_time),
+                format_timestamp(agent.update_time),
                 escape(effective_identity),
             )
 
@@ -301,43 +263,31 @@ def get_agent(
 
         if full:
             agent_dict = {
-                "resource_name": getattr(agent, "name", None)
-                or getattr(agent, "resource_name", ""),
-                "display_name": getattr(agent, "display_name", None),
-                "description": getattr(agent, "description", None),
-                "create_time": str(getattr(agent, "create_time", None)),
-                "update_time": str(getattr(agent, "update_time", None)),
+                "resource_name": agent.name or "",
+                "display_name": agent.display_name,
+                "description": agent.description,
+                "create_time": str(agent.create_time),
+                "update_time": str(agent.update_time),
             }
-            spec = _get_agent_spec(agent)
-            if spec:
-                agent_dict["spec"] = str(spec)
+            if agent.spec:
+                agent_dict["spec"] = str(agent.spec)
             console.print(json.dumps(agent_dict, indent=2, default=str))
         else:
-            name = get_id(agent)
-            display_name = getattr(agent, "display_name", "") or "N/A"
-            description = getattr(agent, "description", "") or "N/A"
-            create_time = format_timestamp(getattr(agent, "create_time", None)) or "N/A"
-            update_time = format_timestamp(getattr(agent, "update_time", None)) or "N/A"
-
-            effective_identity = "N/A"
-            agent_framework_str = "N/A"
-            class_methods = "N/A"
-            agent_card = "N/A"
-
-            spec = _get_agent_spec(agent)
-            if spec:
-                effective_identity = getattr(spec, "effective_identity", "N/A")
-                agent_framework_str = getattr(spec, "agent_framework", "N/A")
-                class_methods, agent_card = _format_class_methods(spec)
+            spec = agent.spec
+            effective_identity = (spec.effective_identity if spec else None) or "N/A"
+            agent_framework_str = (spec.agent_framework if spec else None) or "N/A"
+            class_methods, agent_card = _format_class_methods(
+                spec.class_methods if spec else None
+            )
 
             content = (
-                f"[bold]Name:[/bold] {escape(name)}\n"
-                f"[bold]Display Name:[/bold] {escape(display_name)}\n"
-                f"[bold]Description:[/bold] {escape(description)}\n"
-                f"[bold]Created:[/bold] {create_time}\n"
-                f"[bold]Updated:[/bold] {update_time}\n"
+                f"[bold]Name:[/bold] {escape(get_id(agent.name))}\n"
+                f"[bold]Display Name:[/bold] {escape(agent.display_name or 'N/A')}\n"
+                f"[bold]Description:[/bold] {escape(agent.description or 'N/A')}\n"
+                f"[bold]Created:[/bold] {format_timestamp(agent.create_time) or 'N/A'}\n"
+                f"[bold]Updated:[/bold] {format_timestamp(agent.update_time) or 'N/A'}\n"
                 f"[bold]Effective Identity:[/bold] {escape(effective_identity)}\n"
-                f"[bold]Agent Framework:[/bold] {escape(str(agent_framework_str))}\n"
+                f"[bold]Agent Framework:[/bold] {escape(agent_framework_str)}\n"
                 f"[bold]Class Methods:[/bold] {escape(class_methods)}\n"
                 f"[bold]Agent Card:[/bold] {escape(str(agent_card))}"
             )
@@ -390,13 +340,9 @@ def create_agent(
             agent_framework=agent_framework,
         )
 
-        name = get_id(agent)
-        resource_name = getattr(agent, "name", None) or getattr(
-            agent, "resource_name", ""
-        )
         console.print("[green]Agent created successfully![/green]")
-        console.print(f"Name: {name}")
-        console.print(f"Resource: {resource_name}")
+        console.print(f"Name: {get_id(agent.name)}")
+        console.print(f"Resource: {agent.name or ''}")
     except Exception as e:
         console.print(f"[red]Error creating agent: {escape(str(e))}[/red]")
         raise typer.Exit(code=1)
@@ -455,18 +401,12 @@ def list_sessions(
         has_sessions = False
         for session in sessions:
             has_sessions = True
-            session_id = get_id(session)
-            display_name = getattr(session, "display_name", "") or ""
-            user_id = getattr(session, "user_id", "") or ""
-            create_time = format_timestamp(getattr(session, "create_time", None))
-            expire_time = format_timestamp(getattr(session, "expire_time", None))
-
             table.add_row(
-                escape(session_id),
-                escape(display_name),
-                escape(user_id),
-                create_time,
-                expire_time,
+                escape(get_id(session.name)),
+                escape(session.display_name or ""),
+                escape(session.user_id or ""),
+                format_timestamp(session.create_time),
+                format_timestamp(session.expire_time),
             )
 
         if not has_sessions:
@@ -505,29 +445,17 @@ def list_sandboxes(
         table.add_column("Expires")
 
         for sandbox in sandboxes:
-            sandbox_id = get_id(sandbox)
-            display_name = getattr(sandbox, "display_name", "") or ""
-
             # Format state (remove STATE_ prefix if present)
-            sandbox_state_raw = getattr(sandbox, "state", None)
-            if sandbox_state_raw:
-                sandbox_state = (
-                    str(sandbox_state_raw.value).replace("STATE_", "")
-                    if hasattr(sandbox_state_raw, "value")
-                    else str(sandbox_state_raw)
-                )
-            else:
-                sandbox_state = ""
-
-            create_time = format_timestamp(getattr(sandbox, "create_time", None))
-            expire_time = format_timestamp(getattr(sandbox, "expire_time", None))
+            sandbox_state = ""
+            if sandbox.state:
+                sandbox_state = str(sandbox.state.value).replace("STATE_", "")
 
             table.add_row(
-                escape(sandbox_id),
-                escape(display_name),
+                escape(get_id(sandbox.name)),
+                escape(sandbox.display_name or ""),
                 sandbox_state,
-                create_time,
-                expire_time,
+                format_timestamp(sandbox.create_time),
+                format_timestamp(sandbox.expire_time),
             )
 
         console.print(table)
@@ -561,27 +489,19 @@ def list_memories(
         has_items = False
         for memory in memories:
             has_items = True
-            memory_id = get_id(memory)
-            display_name = getattr(memory, "display_name", "") or ""
-            fact = getattr(memory, "fact", "") or ""
 
             # Format scope dict as key=value pairs
-            scope_raw = getattr(memory, "scope", None)
-            if scope_raw and isinstance(scope_raw, (dict, MutableMapping)):
-                scope = ", ".join(f"{k}={v}" for k, v in scope_raw.items())
-            else:
-                scope = ""
-
-            create_time = format_timestamp(getattr(memory, "create_time", None))
-            expire_time = format_timestamp(getattr(memory, "expire_time", None))
+            scope = ""
+            if memory.scope:
+                scope = ", ".join(f"{k}={v}" for k, v in memory.scope.items())
 
             table.add_row(
-                escape(memory_id),
-                escape(display_name),
+                escape(get_id(memory.name)),
+                escape(memory.display_name or ""),
                 escape(scope),
-                escape(fact),
-                create_time,
-                expire_time,
+                escape(memory.fact or ""),
+                format_timestamp(memory.create_time),
+                format_timestamp(memory.expire_time),
             )
 
         if not has_items:

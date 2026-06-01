@@ -1,32 +1,23 @@
 """Fake implementations for testing."""
 
-from datetime import datetime
-from typing import Any, Iterator
 from dataclasses import dataclass
-from enum import Enum
+from datetime import datetime
+from typing import Iterator
 
-from google.cloud.aiplatform_v1beta1.types import ReasoningEngine, ReasoningEngineSpec, Session, Memory
-
-
-class SandboxState(str, Enum):
-    STATE_UNSPECIFIED = "STATE_UNSPECIFIED"
-    STATE_RUNNING = "STATE_RUNNING"
-    STATE_STOPPED = "STATE_STOPPED"
-
-
-@dataclass
-class Sandbox:
-    """Fake Sandbox since the real one is not easily importable."""
-    name: str
-    display_name: str
-    state: Any
-    create_time: datetime
-    expire_time: datetime
+from vertexai._genai.types.common import (
+    Memory,
+    ReasoningEngine,
+    ReasoningEngineSpec,
+    SandboxEnvironment,
+    SandboxState,
+    Session,
+)
 
 
 @dataclass
 class CreateAgentCall:
     """Records the arguments passed to create_agent."""
+
     display_name: str
     identity_type: str
     service_account: str | None
@@ -35,14 +26,14 @@ class CreateAgentCall:
 
 
 class FakeAgentEngineClient:
-    """Fake client for Agent Engine."""
+    """Fake client for Agent Engine that uses the same SDK pydantic types as production."""
 
     def __init__(self, project: str, location: str):
         self.project = project
         self.location = location
         self._agents: dict[str, ReasoningEngine] = {}
         self._sessions: dict[str, list[Session]] = {}
-        self._sandboxes: dict[str, list[Sandbox]] = {}
+        self._sandboxes: dict[str, list[SandboxEnvironment]] = {}
         self._memories: dict[str, list[Memory]] = {}
         self.create_agent_calls: list[CreateAgentCall] = []
 
@@ -76,17 +67,22 @@ class FakeAgentEngineClient:
         agent_framework: str | None = None,
     ) -> ReasoningEngine:
         self.create_agent_calls.append(
-            CreateAgentCall(display_name=display_name, identity_type=identity_type, service_account=service_account, image_uri=image_uri, agent_framework=agent_framework)
+            CreateAgentCall(
+                display_name=display_name,
+                identity_type=identity_type,
+                service_account=service_account,
+                image_uri=image_uri,
+                agent_framework=agent_framework,
+            )
         )
 
         agent_id = f"agent-{len(self._agents) + 1}"
         name = self._get_full_name("reasoningEngines", agent_id)
 
-        spec = ReasoningEngineSpec(agent_framework="langchain")
         agent = ReasoningEngine(
             name=name,
             display_name=display_name,
-            spec=spec,
+            spec=ReasoningEngineSpec(agent_framework="langchain"),
             create_time=datetime.now(),
             update_time=datetime.now(),
         )
@@ -108,7 +104,11 @@ class FakeAgentEngineClient:
 
         if name in self._agents:
             if not force:
-                if self._sessions.get(name) or self._memories.get(name) or self._sandboxes.get(name):
+                if (
+                    self._sessions.get(name)
+                    or self._memories.get(name)
+                    or self._sandboxes.get(name)
+                ):
                     raise Exception("Agent has resources, use force to delete")
 
             del self._agents[name]
@@ -122,7 +122,7 @@ class FakeAgentEngineClient:
         agent = self.get_agent(agent_id)
         return iter(self._sessions.get(agent.name, []))
 
-    def list_sandboxes(self, agent_id: str) -> Iterator[Sandbox]:
+    def list_sandboxes(self, agent_id: str) -> Iterator[SandboxEnvironment]:
         agent = self.get_agent(agent_id)
         return iter(self._sandboxes.get(agent.name, []))
 
