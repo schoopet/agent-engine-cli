@@ -122,16 +122,20 @@ def extract_response_text(result: object) -> str | None:
     return "\n".join(texts) if texts else None
 
 
-_SYNTHETIC_AGENT_CARD = json.dumps({
-    "name": "Agent",
-    "description": "Agent Engine instance",
-    "url": "https://placeholder.invalid/",
-    "version": "1.0.0",
-    "capabilities": {"streaming": False},
-    "defaultInputModes": ["text/plain"],
-    "defaultOutputModes": ["text/plain"],
-    "skills": [{"id": "default", "name": "Default", "description": "Default", "tags": []}],
-})
+_SYNTHETIC_AGENT_CARD = json.dumps(
+    {
+        "name": "Agent",
+        "description": "Agent Engine instance",
+        "url": "https://placeholder.invalid/",
+        "version": "1.0.0",
+        "capabilities": {"streaming": False},
+        "defaultInputModes": ["text/plain"],
+        "defaultOutputModes": ["text/plain"],
+        "skills": [
+            {"id": "default", "name": "Default", "description": "Default", "tags": []}
+        ],
+    }
+)
 
 
 def _rebind_missing_a2a_methods(remote_agent: object) -> None:
@@ -215,16 +219,13 @@ async def run_a2a_chat(
         http_options["api_version"] = api_version
     if base_url:
         http_options["base_url"] = base_url
+    from agent_engine_cli.client import resolve_resource_name
+
     client = vertexai.Client(
         project=project, location=location, http_options=http_options
     )
-    if "/" in agent_id:
-        resource_name = agent_id
-    else:
-        resource_name = f"projects/{project}/locations/{location}/reasoningEngines/{agent_id}"
-    remote_agent = await asyncio.to_thread(
-        client.agent_engines.get, name=resource_name
-    )
+    resource_name = resolve_resource_name(project, location, agent_id)
+    remote_agent = await asyncio.to_thread(client.agent_engines.get, name=resource_name)
     _rebind_missing_a2a_methods(remote_agent)
 
     if debug:
@@ -285,8 +286,14 @@ def _debug_agent_object(remote_agent: object) -> None:
     """Print diagnostic info about the remote agent object."""
     console.print(f"\n[yellow]--- Agent object debug ---[/yellow]")
     console.print(f"[yellow]Type:[/yellow] {type(remote_agent)}")
-    for name in ("on_message_send", "handle_authenticated_agent_card",
-                  "on_get_task", "on_cancel_task", "query", "operation"):
+    for name in (
+        "on_message_send",
+        "handle_authenticated_agent_card",
+        "on_get_task",
+        "on_cancel_task",
+        "query",
+        "operation",
+    ):
         attr = getattr(remote_agent, name, "<MISSING>")
         console.print(f"[yellow]  .{name}:[/yellow] {type(attr).__name__} = {attr!r}")
     public = [a for a in dir(remote_agent) if not a.startswith("_")]
@@ -323,7 +330,11 @@ async def _handle_command(
                         agent_card_data = card
                         break
                 if agent_card_data:
-                    parsed = json.loads(agent_card_data) if isinstance(agent_card_data, str) else agent_card_data
+                    parsed = (
+                        json.loads(agent_card_data)
+                        if isinstance(agent_card_data, str)
+                        else agent_card_data
+                    )
                     console.print(
                         Panel(
                             json.dumps(parsed, indent=2, default=str),
@@ -336,7 +347,9 @@ async def _handle_command(
                         "this agent does not have an agent card configured in its operation schema."
                     )
             except Exception as inner_e:
-                console.print(f"[red]Error fetching agent card: {escape(str(inner_e))}[/red]")
+                console.print(
+                    f"[red]Error fetching agent card: {escape(str(inner_e))}[/red]"
+                )
         except AttributeError as e:
             console.print(f"[red]Error fetching agent card: {escape(str(e))}[/red]")
         except Exception as e:
@@ -345,7 +358,9 @@ async def _handle_command(
     elif cmd.name == "/new-task":
         state.current_task_id = None
         state.current_context_id = None
-        console.print("Context and task cleared. Next message will start a new conversation.")
+        console.print(
+            "Context and task cleared. Next message will start a new conversation."
+        )
 
     elif cmd.name == "/get-task":
         task_id = cmd.args.strip() or state.current_task_id

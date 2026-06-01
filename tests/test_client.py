@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent_engine_cli.client import AgentEngineClient
+from agent_engine_cli.client import AgentEngineClient, resolve_resource_name
 
 
 @pytest.fixture
@@ -13,10 +13,13 @@ def mock_vertexai():
     mock_v = MagicMock()
     mock_v.types = MagicMock()
 
-    with patch.dict("sys.modules", {
-        "vertexai": mock_v,
-        "vertexai.types": mock_v.types,
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "vertexai": mock_v,
+            "vertexai.types": mock_v.types,
+        },
+    ):
         yield mock_v
 
 
@@ -54,7 +57,9 @@ class TestAgentEngineClient:
 
     def test_init_custom_api_version(self, mock_vertexai, mock_types):
         """Test that custom api_version is passed through in http_options."""
-        AgentEngineClient(project="test-project", location="us-central1", api_version="v1beta1")
+        AgentEngineClient(
+            project="test-project", location="us-central1", api_version="v1beta1"
+        )
 
         mock_vertexai.Client.assert_called_once_with(
             project="test-project",
@@ -99,11 +104,15 @@ class TestAgentEngineClient:
     def test_list_agents(self, mock_vertexai, mock_types):
         """Test listing agents."""
         mock_api_resource1 = MagicMock()
-        mock_api_resource1.name = "projects/test/locations/us-central1/reasoningEngines/agent1"
+        mock_api_resource1.name = (
+            "projects/test/locations/us-central1/reasoningEngines/agent1"
+        )
         mock_api_resource1.display_name = "Agent 1"
 
         mock_api_resource2 = MagicMock()
-        mock_api_resource2.name = "projects/test/locations/us-central1/reasoningEngines/agent2"
+        mock_api_resource2.name = (
+            "projects/test/locations/us-central1/reasoningEngines/agent2"
+        )
         mock_api_resource2.display_name = "Agent 2"
 
         mock_agent1 = MagicMock()
@@ -111,7 +120,10 @@ class TestAgentEngineClient:
         mock_agent2 = MagicMock()
         mock_agent2.api_resource = mock_api_resource2
 
-        mock_vertexai.Client.return_value.agent_engines.list.return_value = [mock_agent1, mock_agent2]
+        mock_vertexai.Client.return_value.agent_engines.list.return_value = [
+            mock_agent1,
+            mock_agent2,
+        ]
 
         client = AgentEngineClient(project="test-project", location="us-central1")
         agents = client.list_agents()
@@ -136,40 +148,63 @@ class TestAgentEngineClient:
         client = AgentEngineClient(project="test-project", location="us-central1")
         agent = client.get_agent("agent123")
 
-        expected_name = "projects/test-project/locations/us-central1/reasoningEngines/agent123"
-        mock_vertexai.Client.return_value.agent_engines.get.assert_called_with(name=expected_name)
+        expected_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
+        mock_vertexai.Client.return_value.agent_engines.get.assert_called_with(
+            name=expected_name
+        )
 
     def test_get_agent_with_full_name(self, mock_vertexai, mock_types):
         """Test getting agent by full resource name."""
         mock_agent = MagicMock()
         mock_vertexai.Client.return_value.agent_engines.get.return_value = mock_agent
 
-        full_name = "projects/other-project/locations/europe-west1/reasoningEngines/agent456"
+        full_name = (
+            "projects/other-project/locations/europe-west1/reasoningEngines/agent456"
+        )
         client = AgentEngineClient(project="test-project", location="us-central1")
         agent = client.get_agent(full_name)
 
-        mock_vertexai.Client.return_value.agent_engines.get.assert_called_with(name=full_name)
+        mock_vertexai.Client.return_value.agent_engines.get.assert_called_with(
+            name=full_name
+        )
 
     def test_create_agent_service_account_identity(self, mock_vertexai, mock_types):
         """Test creating agent with service_account identity."""
         mock_result = MagicMock()
-        mock_result.resource_name = "projects/test-project/locations/us-central1/reasoningEngines/new-agent"
-        mock_vertexai.Client.return_value.agent_engines.create.return_value = mock_result
+        mock_result.resource_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/new-agent"
+        )
+        mock_vertexai.Client.return_value.agent_engines.create.return_value = (
+            mock_result
+        )
 
         client = AgentEngineClient(project="test-project", location="us-central1")
-        agent = client.create_agent(display_name="Test Agent", identity_type="service_account")
+        agent = client.create_agent(
+            display_name="Test Agent", identity_type="service_account"
+        )
 
         mock_vertexai.Client.return_value.agent_engines.create.assert_called_once()
-        call_kwargs = mock_vertexai.Client.return_value.agent_engines.create.call_args[1]
+        call_kwargs = mock_vertexai.Client.return_value.agent_engines.create.call_args[
+            1
+        ]
         assert call_kwargs["config"]["display_name"] == "Test Agent"
-        assert call_kwargs["config"]["identity_type"] == mock_types.IdentityType.SERVICE_ACCOUNT
+        assert (
+            call_kwargs["config"]["identity_type"]
+            == mock_types.IdentityType.SERVICE_ACCOUNT
+        )
         assert "service_account" not in call_kwargs["config"]
 
     def test_create_agent_with_custom_service_account(self, mock_vertexai, mock_types):
         """Test creating agent with a specific service account."""
         mock_result = MagicMock()
-        mock_result.resource_name = "projects/test-project/locations/us-central1/reasoningEngines/new-agent"
-        mock_vertexai.Client.return_value.agent_engines.create.return_value = mock_result
+        mock_result.resource_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/new-agent"
+        )
+        mock_vertexai.Client.return_value.agent_engines.create.return_value = (
+            mock_result
+        )
 
         client = AgentEngineClient(project="test-project", location="us-central1")
         agent = client.create_agent(
@@ -179,38 +214,61 @@ class TestAgentEngineClient:
         )
 
         mock_vertexai.Client.return_value.agent_engines.create.assert_called_once()
-        call_kwargs = mock_vertexai.Client.return_value.agent_engines.create.call_args[1]
+        call_kwargs = mock_vertexai.Client.return_value.agent_engines.create.call_args[
+            1
+        ]
         assert call_kwargs["config"]["display_name"] == "Test Agent"
-        assert call_kwargs["config"]["identity_type"] == mock_types.IdentityType.SERVICE_ACCOUNT
-        assert call_kwargs["config"]["service_account"] == "my-sa@test-project.iam.gserviceaccount.com"
+        assert (
+            call_kwargs["config"]["identity_type"]
+            == mock_types.IdentityType.SERVICE_ACCOUNT
+        )
+        assert (
+            call_kwargs["config"]["service_account"]
+            == "my-sa@test-project.iam.gserviceaccount.com"
+        )
 
     def test_create_agent_with_agent_identity(self, mock_vertexai, mock_types):
         """Test creating agent with agent_identity type."""
         mock_result = MagicMock()
-        mock_result.resource_name = "projects/test-project/locations/us-central1/reasoningEngines/new-agent"
-        mock_vertexai.Client.return_value.agent_engines.create.return_value = mock_result
+        mock_result.resource_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/new-agent"
+        )
+        mock_vertexai.Client.return_value.agent_engines.create.return_value = (
+            mock_result
+        )
 
         client = AgentEngineClient(project="test-project", location="us-central1")
-        agent = client.create_agent(display_name="Test Agent", identity_type="agent_identity")
+        agent = client.create_agent(
+            display_name="Test Agent", identity_type="agent_identity"
+        )
 
         mock_vertexai.Client.return_value.agent_engines.create.assert_called_once()
-        call_kwargs = mock_vertexai.Client.return_value.agent_engines.create.call_args[1]
+        call_kwargs = mock_vertexai.Client.return_value.agent_engines.create.call_args[
+            1
+        ]
         assert call_kwargs["config"]["display_name"] == "Test Agent"
-        assert call_kwargs["config"]["identity_type"] == mock_types.IdentityType.AGENT_IDENTITY
+        assert (
+            call_kwargs["config"]["identity_type"]
+            == mock_types.IdentityType.AGENT_IDENTITY
+        )
 
     def test_delete_agent_with_id(self, mock_vertexai, mock_types):
         """Test deleting agent by short ID."""
         client = AgentEngineClient(project="test-project", location="us-central1")
         client.delete_agent("agent123")
 
-        expected_name = "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        expected_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
         mock_vertexai.Client.return_value.agent_engines.delete.assert_called_with(
             name=expected_name, force=False
         )
 
     def test_delete_agent_with_full_name(self, mock_vertexai, mock_types):
         """Test deleting agent by full resource name."""
-        full_name = "projects/other-project/locations/europe-west1/reasoningEngines/agent456"
+        full_name = (
+            "projects/other-project/locations/europe-west1/reasoningEngines/agent456"
+        )
         client = AgentEngineClient(project="test-project", location="us-central1")
         client.delete_agent(full_name)
 
@@ -223,7 +281,9 @@ class TestAgentEngineClient:
         client = AgentEngineClient(project="test-project", location="us-central1")
         client.delete_agent("agent123", force=True)
 
-        expected_name = "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        expected_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
         mock_vertexai.Client.return_value.agent_engines.delete.assert_called_with(
             name=expected_name, force=True
         )
@@ -234,7 +294,10 @@ class TestResolveResourceName:
         """Test that a short ID is expanded to a full resource name."""
         client = AgentEngineClient(project="test-project", location="us-central1")
         result = client._resolve_resource_name("agent123")
-        assert result == "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        assert (
+            result
+            == "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
 
     def test_full_name_returned_as_is(self, mock_vertexai, mock_types):
         """Test that a full resource name is returned unchanged."""
@@ -271,3 +334,111 @@ class TestResolveResourceName:
         client = AgentEngineClient(project="test-project", location="us-central1")
         with pytest.raises(ValueError):
             client.get_agent("")
+
+
+class TestListSessions:
+    def test_list_sessions_calls_sdk(self, mock_vertexai, mock_types):
+        """Test that list_sessions resolves the resource name and calls the SDK."""
+        mock_session = MagicMock()
+        mock_vertexai.Client.return_value.agent_engines.list_sessions.return_value = [
+            mock_session
+        ]
+
+        client = AgentEngineClient(project="test-project", location="us-central1")
+        result = list(client.list_sessions("agent123"))
+
+        expected_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
+        mock_vertexai.Client.return_value.agent_engines.list_sessions.assert_called_once_with(
+            name=expected_name
+        )
+        assert len(result) == 1
+
+    def test_list_sessions_with_full_name(self, mock_vertexai, mock_types):
+        """Test list_sessions with a full resource name."""
+        mock_vertexai.Client.return_value.agent_engines.list_sessions.return_value = []
+
+        full_name = "projects/other/locations/eu/reasoningEngines/agent456"
+        client = AgentEngineClient(project="test-project", location="us-central1")
+        list(client.list_sessions(full_name))
+
+        mock_vertexai.Client.return_value.agent_engines.list_sessions.assert_called_once_with(
+            name=full_name
+        )
+
+
+class TestListSandboxes:
+    def test_list_sandboxes_calls_sdk(self, mock_vertexai, mock_types):
+        """Test that list_sandboxes resolves the resource name and calls the SDK."""
+        mock_sandbox = MagicMock()
+        mock_vertexai.Client.return_value.agent_engines.sandboxes.list.return_value = [
+            mock_sandbox
+        ]
+
+        client = AgentEngineClient(project="test-project", location="us-central1")
+        result = list(client.list_sandboxes("agent123"))
+
+        expected_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
+        mock_vertexai.Client.return_value.agent_engines.sandboxes.list.assert_called_once_with(
+            name=expected_name
+        )
+        assert len(result) == 1
+
+    def test_list_sandboxes_empty(self, mock_vertexai, mock_types):
+        """Test list_sandboxes when none exist."""
+        mock_vertexai.Client.return_value.agent_engines.sandboxes.list.return_value = []
+
+        client = AgentEngineClient(project="test-project", location="us-central1")
+        result = list(client.list_sandboxes("agent123"))
+
+        assert len(result) == 0
+
+
+class TestListMemories:
+    def test_list_memories_calls_sdk(self, mock_vertexai, mock_types):
+        """Test that list_memories resolves the resource name and calls the SDK."""
+        mock_memory = MagicMock()
+        mock_vertexai.Client.return_value.agent_engines.memories.list.return_value = [
+            mock_memory
+        ]
+
+        client = AgentEngineClient(project="test-project", location="us-central1")
+        result = list(client.list_memories("agent123"))
+
+        expected_name = (
+            "projects/test-project/locations/us-central1/reasoningEngines/agent123"
+        )
+        mock_vertexai.Client.return_value.agent_engines.memories.list.assert_called_once_with(
+            name=expected_name
+        )
+        assert len(result) == 1
+
+    def test_list_memories_empty(self, mock_vertexai, mock_types):
+        """Test list_memories when none exist."""
+        mock_vertexai.Client.return_value.agent_engines.memories.list.return_value = []
+
+        client = AgentEngineClient(project="test-project", location="us-central1")
+        result = list(client.list_memories("agent123"))
+
+        assert len(result) == 0
+
+
+class TestResolveResourceNameFunction:
+    """Tests for the module-level resolve_resource_name function."""
+
+    def test_short_id_expanded(self):
+        result = resolve_resource_name("my-proj", "us-central1", "agent123")
+        assert (
+            result == "projects/my-proj/locations/us-central1/reasoningEngines/agent123"
+        )
+
+    def test_full_name_returned_as_is(self):
+        full = "projects/other/locations/eu/reasoningEngines/x"
+        assert resolve_resource_name("my-proj", "us-central1", full) == full
+
+    def test_any_slash_treated_as_full_name(self):
+        partial = "foo/bar"
+        assert resolve_resource_name("proj", "loc", partial) == "foo/bar"

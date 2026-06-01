@@ -1,6 +1,7 @@
 """
 Interactive chat client for Agent Engine.
 """
+
 import asyncio
 import json
 import logging
@@ -110,21 +111,19 @@ def _install_api_logging_hooks(debug: bool) -> None:
         self, http_method, path, request_dict, http_options=None
     ):
         if debug:
-            console.print(f"\n{'='*60}")
-            console.print(
-                f"API REQUEST (non-streaming): {http_method.upper()} {path}"
-            )
+            console.print(f"\n{'=' * 60}")
+            console.print(f"API REQUEST (non-streaming): {http_method.upper()} {path}")
             console.print(f"Request dict: {request_dict}")
-            console.print(f"{'='*60}\n")
+            console.print(f"{'=' * 60}\n")
 
         result = await _original_async_request(
             self, http_method, path, request_dict, http_options
         )
 
         if debug:
-            console.print(f"\n{'='*60}")
+            console.print(f"\n{'=' * 60}")
             console.print(f"API RESPONSE: {result}")
-            console.print(f"{'='*60}\n")
+            console.print(f"{'=' * 60}\n")
 
         return result
 
@@ -132,18 +131,16 @@ def _install_api_logging_hooks(debug: bool) -> None:
     _api_client.BaseApiClient.async_request = _logged_async_request
 
     # Monkey patch async_request_streamed for streaming requests
-    _original_async_request_streamed = (
-        _api_client.BaseApiClient.async_request_streamed
-    )
+    _original_async_request_streamed = _api_client.BaseApiClient.async_request_streamed
 
     async def _logged_async_request_streamed(
         self, http_method, path, request_dict, http_options=None
     ):
         if debug:
-            console.print(f"\n{'='*60}")
+            console.print(f"\n{'=' * 60}")
             console.print(f"API REQUEST (streaming): {http_method.upper()} {path}")
             console.print(f"Request dict: {request_dict}")
-            console.print(f"{'='*60}\n")
+            console.print(f"{'=' * 60}\n")
 
         result = await _original_async_request_streamed(
             self, http_method, path, request_dict, http_options
@@ -198,18 +195,21 @@ async def run_chat(
         http_options["api_version"] = api_version
     if base_url:
         http_options["base_url"] = base_url
-    client = vertexai.Client(project=project, location=location, http_options=http_options)
-    if "/" in agent_id:
-        resource_name = agent_id
-    else:
-        resource_name = f"projects/{project}/locations/{location}/reasoningEngines/{agent_id}"
+    from agent_engine_cli.client import resolve_resource_name
+
+    client = vertexai.Client(
+        project=project, location=location, http_options=http_options
+    )
+    resource_name = resolve_resource_name(project, location, agent_id)
     adk_app = await asyncio.to_thread(client.agent_engines.get, name=resource_name)
 
     # Create session
     session = await adk_app.async_create_session(user_id=user_id)
     session_id = session["id"]
 
-    console.print(f"[green]Ready.[/green] User: {escape(user_id)}, Session: {escape(session_id)}\n")
+    console.print(
+        f"[green]Ready.[/green] User: {escape(user_id)}, Session: {escape(session_id)}\n"
+    )
     console.print("Type your message and press Enter. Type 'quit' or 'exit' to end.\n")
 
     # Main loop
@@ -263,7 +263,9 @@ async def run_chat(
                     tools_used.append(tool_name)
                     # Print tool call immediately
                     args_str = _format_tool_args(tool_args)
-                    console.print(f"[dim]\\[{escape(tool_name)}({escape(args_str)})][/dim]")
+                    console.print(
+                        f"[dim]\\[{escape(tool_name)}({escape(args_str)})][/dim]"
+                    )
 
                 # Extract Text
                 text = None
@@ -282,6 +284,8 @@ async def run_chat(
             )
 
         if full_response_text:
-            console.print(f"\n[cyan]Agent:[/cyan] {escape(''.join(full_response_text))}")
+            console.print(
+                f"\n[cyan]Agent:[/cyan] {escape(''.join(full_response_text))}"
+            )
 
         print()  # Final newline

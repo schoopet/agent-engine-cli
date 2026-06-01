@@ -1,7 +1,9 @@
 import asyncio
 import json
+import logging
 from collections.abc import MutableMapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated, Literal
 
 import typer
@@ -10,9 +12,12 @@ from rich.panel import Panel
 from rich.table import Table
 
 from agent_engine_cli import __version__
+from agent_engine_cli.client import AgentEngineClient
 from agent_engine_cli.config import resolve_project
 from agent_engine_cli.console import console
 from agent_engine_cli.dependencies import get_client
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -54,7 +59,9 @@ def _resolve_config(agent_id: str | None = None) -> tuple[str, str]:
 
     location = state.location or fallback_location
     if not location:
-        console.print("[red]Error: Location is required. Use --location or set it globally.[/red]")
+        console.print(
+            "[red]Error: Location is required. Use --location or set it globally.[/red]"
+        )
         raise typer.Exit(code=1)
 
     try:
@@ -66,7 +73,7 @@ def _resolve_config(agent_id: str | None = None) -> tuple[str, str]:
     return project, location
 
 
-def get_ready_client(agent_id: str | None = None):
+def get_ready_client(agent_id: str | None = None) -> AgentEngineClient:
     """Helper to resolve project and return an initialized client."""
     project, location = _resolve_config(agent_id)
     return get_client(
@@ -79,8 +86,116 @@ def get_ready_client(agent_id: str | None = None):
 
 def get_id(resource: object) -> str:
     """Extract ID from a resource name string or object."""
-    name = resource if isinstance(resource, str) else (getattr(resource, "name", None) or getattr(resource, "resource_name", ""))
+    name = (
+        resource
+        if isinstance(resource, str)
+        else (getattr(resource, "name", None) or getattr(resource, "resource_name", ""))
+    )
     return name.split("/")[-1] if name else ""
+
+
+def format_timestamp(value: object) -> str:
+    """Format a timestamp value for display, returning '' if unavailable."""
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M")
+    # Handle proto Timestamp objects that have a strftime-like interface
+    strftime_fn = getattr(value, "strftime", None)
+    if strftime_fn is not None:
+        return strftime_fn("%Y-%m-%d %H:%M")
+    return ""
+
+
+def _get_agent_spec(agent: object) -> object | None:
+    """Extract the spec from an agent, checking api_resource first."""
+    api_resource = getattr(agent, "api_resource", None)
+    if api_resource is not None:
+        spec = getattr(api_resource, "spec", None)
+        if spec:
+            return spec
+    spec = getattr(agent, "spec", None)
+    if spec:
+        return spec
+    return None
+
+
+def _format_class_methods(spec: object) -> tuple[str, str]:
+    """Extract formatted class methods and agent card from a spec.
+
+    Returns:
+        A tuple of (class_methods_str, agent_card_str) with "N/A" as defaults.
+    """
+    raw_methods = getattr(spec, "class_methods", []) or []
+    method_names: list[str] = []
+    agent_card = "N/A"
+
+    for m in raw_methods:
+        try:
+            m_name = (
+                getattr(m, "name", None)
+                or getattr(m, "method", None)
+                or (m.get("name") if hasattr(m, "get") else None)
+                or (m.get("method") if hasattr(m, "get") else None)
+            )
+            if not m_name:
+                continue
+
+            # Extract parameters and their types
+            m_params = getattr(m, "parameters", None) or (
+                m.get("parameters") if hasattr(m, "get") else None
+            )
+
+            if m_params and isinstance(m_params, dict):
+                properties = m_params.get("properties", {})
+                required = m_params.get("required", [])
+                p_list = []
+                for p, p_info in properties.items():
+                    p_type = ""
+                    if isinstance(p_info, dict):
+                        p_type = p_info.get("type", "")
+                        if not p_type and "anyOf" in p_info:
+                            types = [
+                                t.get("type", "any")
+                                for t in p_info["anyOf"]
+                                if isinstance(t, dict)
+                            ]
+                            p_type = "|".join(types)
+
+                    p_str = f"{p}: {p_type}" if p_type else p
+                    if p in required:
+                        p_list.append(f"{p_str}*")
+                    else:
+                        p_list.append(p_str)
+                method_names.append(f"{m_name}({', '.join(p_list)})")
+            else:
+                method_names.append(str(m_name))
+
+            # Extract and add description
+            m_desc = getattr(m, "description", None) or (
+                m.get("description") if hasattr(m, "get") else None
+            )
+            if m_desc:
+                m_desc_clean = m_desc.strip().split("\n")[0]
+                method_names.append(f"    {m_desc_clean}")
+
+            if agent_card == "N/A":
+                m_metadata = getattr(m, "metadata", None) or (
+                    m.get("metadata") if hasattr(m, "get") else None
+                )
+                if m_metadata:
+                    card = getattr(m_metadata, "get", lambda k, d: None)(
+                        "a2a_agent_card", None
+                    ) or getattr(m_metadata, "get", lambda k, d: None)(
+                        "agent_card", None
+                    )
+                    if card:
+                        agent_card = card
+        except (TypeError, KeyError, AttributeError) as e:
+            logger.debug("Skipping malformed class method entry: %s", e)
+
+    class_methods = ("\n  " + "\n  ".join(method_names)) if method_names else "N/A"
+    return class_methods, agent_card
 
 
 app = typer.Typer(
@@ -93,13 +208,26 @@ app = typer.Typer(
 @app.callback()
 def main(
     location: Annotated[
-        str | None, typer.Option("--location", "-l", help="Google Cloud region", envvar="CLOUD_SDK_LOCATION")
+        str | None,
+        typer.Option(
+            "--location", "-l", help="Google Cloud region", envvar="CLOUD_SDK_LOCATION"
+        ),
     ] = None,
     project: Annotated[
-        str | None, typer.Option("--project", "-p", help="Google Cloud project ID (defaults to ADC project)", envvar="CLOUD_SDK_PROJECT")
+        str | None,
+        typer.Option(
+            "--project",
+            "-p",
+            help="Google Cloud project ID (defaults to ADC project)",
+            envvar="CLOUD_SDK_PROJECT",
+        ),
     ] = None,
-    base_url: Annotated[str | None, typer.Option("--base-url", help="Override the Vertex AI base URL")] = None,
-    api_version: Annotated[str | None, typer.Option("--api-version", help="Override the API version")] = None,
+    base_url: Annotated[
+        str | None, typer.Option("--base-url", help="Override the Vertex AI base URL")
+    ] = None,
+    api_version: Annotated[
+        str | None, typer.Option("--api-version", help="Override the API version")
+    ] = None,
 ):
     """
     Agent Engine CLI - Manage your agents with ease.
@@ -137,23 +265,13 @@ def list_agents() -> None:
         for agent in agents:
             name = get_id(agent)
             display_name = getattr(agent, "display_name", "") or ""
-
-            # Format timestamps compactly (YYYY-MM-DD HH:MM)
-            create_time_raw = getattr(agent, "create_time", None)
-            if create_time_raw:
-                create_time = create_time_raw.strftime("%Y-%m-%d %H:%M")
-            else:
-                create_time = ""
-
-            update_time_raw = getattr(agent, "update_time", None)
-            if update_time_raw:
-                update_time = update_time_raw.strftime("%Y-%m-%d %H:%M")
-            else:
-                update_time = ""
+            create_time = format_timestamp(getattr(agent, "create_time", None))
+            update_time = format_timestamp(getattr(agent, "update_time", None))
 
             effective_identity = "N/A"
-            if hasattr(agent, "spec") and agent.spec:
-                effective_identity = getattr(agent.spec, "effective_identity", "N/A")
+            spec = getattr(agent, "spec", None)
+            if spec:
+                effective_identity = getattr(spec, "effective_identity", "N/A")
 
             table.add_row(
                 escape(name),
@@ -172,7 +290,9 @@ def list_agents() -> None:
 @app.command("get")
 def get_agent(
     agent_id: Annotated[str, typer.Argument(help="Agent ID or full resource name")],
-    full: Annotated[bool, typer.Option("--full", "-f", help="Show full JSON output")] = False,
+    full: Annotated[
+        bool, typer.Option("--full", "-f", help="Show full JSON output")
+    ] = False,
 ) -> None:
     """Get details for a specific agent."""
     client = get_ready_client(agent_id)
@@ -181,98 +301,34 @@ def get_agent(
 
         if full:
             agent_dict = {
-                "resource_name": getattr(agent, "name", None) or getattr(agent, "resource_name", ""),
+                "resource_name": getattr(agent, "name", None)
+                or getattr(agent, "resource_name", ""),
                 "display_name": getattr(agent, "display_name", None),
                 "description": getattr(agent, "description", None),
                 "create_time": str(getattr(agent, "create_time", None)),
                 "update_time": str(getattr(agent, "update_time", None)),
             }
-            api_resource = getattr(agent, "api_resource", None)
-            if api_resource and hasattr(api_resource, "spec") and api_resource.spec:
-                agent_dict["spec"] = str(api_resource.spec)
-            elif hasattr(agent, "spec") and agent.spec:
-                agent_dict["spec"] = str(agent.spec)
+            spec = _get_agent_spec(agent)
+            if spec:
+                agent_dict["spec"] = str(spec)
             console.print(json.dumps(agent_dict, indent=2, default=str))
         else:
             name = get_id(agent)
             display_name = getattr(agent, "display_name", "") or "N/A"
             description = getattr(agent, "description", "") or "N/A"
-            create_time = str(getattr(agent, "create_time", "")) or "N/A"
-            update_time = str(getattr(agent, "update_time", "")) or "N/A"
+            create_time = format_timestamp(getattr(agent, "create_time", None)) or "N/A"
+            update_time = format_timestamp(getattr(agent, "update_time", None)) or "N/A"
 
             effective_identity = "N/A"
-            agent_framework = "N/A"
+            agent_framework_str = "N/A"
             class_methods = "N/A"
             agent_card = "N/A"
 
-            # Try to read from api_resource.spec first
-            spec = None
-            api_resource = getattr(agent, "api_resource", None)
-            if api_resource and hasattr(api_resource, "spec") and api_resource.spec:
-                spec = api_resource.spec
-            elif hasattr(agent, "spec") and agent.spec:
-                spec = agent.spec
-
+            spec = _get_agent_spec(agent)
             if spec:
                 effective_identity = getattr(spec, "effective_identity", "N/A")
-                agent_framework = getattr(spec, "agent_framework", "N/A")
-
-                raw_methods = getattr(spec, "class_methods", []) or []
-                method_names = []
-                for m in raw_methods:
-                    try:
-                        m_name = (getattr(m, "name", None) or 
-                                  getattr(m, "method", None) or 
-                                  (m.get("name") if hasattr(m, "get") else None) or
-                                  (m.get("method") if hasattr(m, "get") else None))
-                        if not m_name:
-                            continue
-
-                        # Extract parameters and their types
-                        m_params = (getattr(m, "parameters", None) or 
-                                   (m.get("parameters") if hasattr(m, "get") else None))
-                        
-                        if m_params and isinstance(m_params, dict):
-                            properties = m_params.get("properties", {})
-                            required = m_params.get("required", [])
-                            p_list = []
-                            for p, p_info in properties.items():
-                                p_type = ""
-                                if isinstance(p_info, dict):
-                                    p_type = p_info.get("type", "")
-                                    if not p_type and "anyOf" in p_info:
-                                        types = [t.get("type", "any") for t in p_info["anyOf"] if isinstance(t, dict)]
-                                        p_type = "|".join(types)
-                                
-                                p_str = f"{p}: {p_type}" if p_type else p
-                                if p in required:
-                                    p_list.append(f"{p_str}*")
-                                else:
-                                    p_list.append(p_str)
-                            method_names.append(f"{m_name}({', '.join(p_list)})")
-                        else:
-                            method_names.append(str(m_name))
-
-                        # Extract and add description
-                        m_desc = (getattr(m, "description", None) or 
-                                  (m.get("description") if hasattr(m, "get") else None))
-                        if m_desc:
-                            # Clean up description and take only the first line/paragraph
-                            m_desc_clean = m_desc.strip().split("\n")[0]
-                            method_names.append(f"    {m_desc_clean}")
-
-                        if agent_card == "N/A":
-                            m_metadata = getattr(m, "metadata", None) or (m.get("metadata") if hasattr(m, "get") else None)
-                            if m_metadata:
-                                card = (getattr(m_metadata, "get", lambda k, d: None)("a2a_agent_card", None) or
-                                        getattr(m_metadata, "get", lambda k, d: None)("agent_card", None))
-                                if card:
-                                    agent_card = card
-                    except Exception:
-                        pass
-
-                if method_names:
-                    class_methods = "\n  " + "\n  ".join(method_names)
+                agent_framework_str = getattr(spec, "agent_framework", "N/A")
+                class_methods, agent_card = _format_class_methods(spec)
 
             content = (
                 f"[bold]Name:[/bold] {escape(name)}\n"
@@ -281,7 +337,7 @@ def get_agent(
                 f"[bold]Created:[/bold] {create_time}\n"
                 f"[bold]Updated:[/bold] {update_time}\n"
                 f"[bold]Effective Identity:[/bold] {escape(effective_identity)}\n"
-                f"[bold]Agent Framework:[/bold] {escape(str(agent_framework))}\n"
+                f"[bold]Agent Framework:[/bold] {escape(str(agent_framework_str))}\n"
                 f"[bold]Class Methods:[/bold] {escape(class_methods)}\n"
                 f"[bold]Agent Card:[/bold] {escape(str(agent_card))}"
             )
@@ -300,15 +356,25 @@ def create_agent(
     ] = "agent_identity",
     service_account: Annotated[
         str | None,
-        typer.Option("--service-account", "-s", help="Service account email (only used with --identity service_account)"),
+        typer.Option(
+            "--service-account",
+            "-s",
+            help="Service account email (only used with --identity service_account)",
+        ),
     ] = None,
     image_uri: Annotated[
         str | None,
-        typer.Option("--image-uri", help="Artifact Registry image URI to deploy as the agent container (e.g. us-central1-docker.pkg.dev/my-project/my-repo/my-image:tag)"),
+        typer.Option(
+            "--image-uri",
+            help="Artifact Registry image URI to deploy as the agent container (e.g. us-central1-docker.pkg.dev/my-project/my-repo/my-image:tag)",
+        ),
     ] = None,
     agent_framework: Annotated[
         str | None,
-        typer.Option("--agent-framework", help="OSS framework used to build the agent. One of: google-adk, langchain, langgraph, ag2, llama-index, custom"),
+        typer.Option(
+            "--agent-framework",
+            help="OSS framework used to build the agent. One of: google-adk, langchain, langgraph, ag2, llama-index, custom",
+        ),
     ] = None,
 ) -> None:
     """Create a new agent (without deploying code)."""
@@ -325,7 +391,9 @@ def create_agent(
         )
 
         name = get_id(agent)
-        resource_name = getattr(agent, "name", None) or getattr(agent, "resource_name", "")
+        resource_name = getattr(agent, "name", None) or getattr(
+            agent, "resource_name", ""
+        )
         console.print("[green]Agent created successfully![/green]")
         console.print(f"Name: {name}")
         console.print(f"Resource: {resource_name}")
@@ -337,8 +405,15 @@ def create_agent(
 @app.command("delete")
 def delete_agent(
     agent_id: Annotated[str, typer.Argument(help="Agent ID or full resource name")],
-    force: Annotated[bool, typer.Option("--force", "-f", help="Force deletion of agents with sessions/memory")] = False,
-    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt")] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force", "-f", help="Force deletion of agents with sessions/memory"
+        ),
+    ] = False,
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Skip confirmation prompt")
+    ] = False,
 ) -> None:
     """Delete an agent."""
     if not yes:
@@ -383,19 +458,8 @@ def list_sessions(
             session_id = get_id(session)
             display_name = getattr(session, "display_name", "") or ""
             user_id = getattr(session, "user_id", "") or ""
-
-            # Format timestamps compactly (YYYY-MM-DD HH:MM)
-            create_time_raw = getattr(session, "create_time", None)
-            if create_time_raw:
-                create_time = create_time_raw.strftime("%Y-%m-%d %H:%M")
-            else:
-                create_time = ""
-
-            expire_time_raw = getattr(session, "expire_time", None)
-            if expire_time_raw:
-                expire_time = expire_time_raw.strftime("%Y-%m-%d %H:%M")
-            else:
-                expire_time = ""
+            create_time = format_timestamp(getattr(session, "create_time", None))
+            expire_time = format_timestamp(getattr(session, "expire_time", None))
 
             table.add_row(
                 escape(session_id),
@@ -445,29 +509,23 @@ def list_sandboxes(
             display_name = getattr(sandbox, "display_name", "") or ""
 
             # Format state (remove STATE_ prefix if present)
-            state_raw = getattr(sandbox, "state", None)
-            if state_raw:
-                state = str(state_raw.value).replace("STATE_", "") if hasattr(state_raw, "value") else str(state_raw)
+            sandbox_state_raw = getattr(sandbox, "state", None)
+            if sandbox_state_raw:
+                sandbox_state = (
+                    str(sandbox_state_raw.value).replace("STATE_", "")
+                    if hasattr(sandbox_state_raw, "value")
+                    else str(sandbox_state_raw)
+                )
             else:
-                state = ""
+                sandbox_state = ""
 
-            # Format timestamps compactly (YYYY-MM-DD HH:MM)
-            create_time_raw = getattr(sandbox, "create_time", None)
-            if create_time_raw:
-                create_time = create_time_raw.strftime("%Y-%m-%d %H:%M")
-            else:
-                create_time = ""
-
-            expire_time_raw = getattr(sandbox, "expire_time", None)
-            if expire_time_raw:
-                expire_time = expire_time_raw.strftime("%Y-%m-%d %H:%M")
-            else:
-                expire_time = ""
+            create_time = format_timestamp(getattr(sandbox, "create_time", None))
+            expire_time = format_timestamp(getattr(sandbox, "expire_time", None))
 
             table.add_row(
                 escape(sandbox_id),
                 escape(display_name),
-                state,
+                sandbox_state,
                 create_time,
                 expire_time,
             )
@@ -514,18 +572,8 @@ def list_memories(
             else:
                 scope = ""
 
-            # Format timestamps compactly (YYYY-MM-DD HH:MM)
-            create_time_raw = getattr(memory, "create_time", None)
-            if create_time_raw:
-                create_time = create_time_raw.strftime("%Y-%m-%d %H:%M")
-            else:
-                create_time = ""
-
-            expire_time_raw = getattr(memory, "expire_time", None)
-            if expire_time_raw:
-                expire_time = expire_time_raw.strftime("%Y-%m-%d %H:%M")
-            else:
-                expire_time = ""
+            create_time = format_timestamp(getattr(memory, "create_time", None))
+            expire_time = format_timestamp(getattr(memory, "expire_time", None))
 
             table.add_row(
                 escape(memory_id),
@@ -549,23 +597,30 @@ def list_memories(
 @app.command("chat")
 def chat(
     agent_id: Annotated[str, typer.Argument(help="Agent ID or full resource name")],
-    user: Annotated[str, typer.Option("--user", "-u", help="User ID for the chat session")] = "cli-user",
-    debug: Annotated[bool, typer.Option("--debug", "-d", help="Enable verbose HTTP debug logging")] = False,
+    user: Annotated[
+        str, typer.Option("--user", "-u", help="User ID for the chat session")
+    ] = "cli-user",
+    debug: Annotated[
+        bool, typer.Option("--debug", "-d", help="Enable verbose HTTP debug logging")
+    ] = False,
 ) -> None:
     """Start an interactive chat session with an agent."""
     project, location = _resolve_config(agent_id)
 
     try:
         from agent_engine_cli.chat import run_chat
-        asyncio.run(run_chat(
-            project=project,
-            location=location,
-            agent_id=agent_id,
-            user_id=user,
-            debug=debug,
-            base_url=state.base_url,
-            api_version=state.api_version,
-        ))
+
+        asyncio.run(
+            run_chat(
+                project=project,
+                location=location,
+                agent_id=agent_id,
+                user_id=user,
+                debug=debug,
+                base_url=state.base_url,
+                api_version=state.api_version,
+            )
+        )
     except KeyboardInterrupt:
         console.print("\n[yellow]Chat session ended.[/yellow]")
     except Exception as e:
@@ -576,21 +631,26 @@ def chat(
 @app.command("a2a-chat")
 def a2a_chat(
     agent_id: Annotated[str, typer.Argument(help="Agent ID or full resource name")],
-    debug: Annotated[bool, typer.Option("--debug", "-d", help="Enable verbose HTTP debug logging")] = False,
+    debug: Annotated[
+        bool, typer.Option("--debug", "-d", help="Enable verbose HTTP debug logging")
+    ] = False,
 ) -> None:
     """Start an interactive A2A chat session with an agent."""
     project, location = _resolve_config(agent_id)
 
     try:
         from agent_engine_cli.a2a_chat import run_a2a_chat
-        asyncio.run(run_a2a_chat(
-            project=project,
-            location=location,
-            agent_id=agent_id,
-            debug=debug,
-            base_url=state.base_url,
-            api_version=state.api_version,
-        ))
+
+        asyncio.run(
+            run_a2a_chat(
+                project=project,
+                location=location,
+                agent_id=agent_id,
+                debug=debug,
+                base_url=state.base_url,
+                api_version=state.api_version,
+            )
+        )
     except KeyboardInterrupt:
         console.print("\n[yellow]Chat session ended.[/yellow]")
     except Exception as e:

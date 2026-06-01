@@ -1,30 +1,36 @@
 """Client wrapper for Vertex AI Agent Engine API."""
 
-from datetime import datetime
-from typing import Any, Iterator, Protocol, runtime_checkable
+from __future__ import annotations
 
-@runtime_checkable
-class AgentSpec(Protocol):
-    """Agent specification with identity information."""
+from typing import TYPE_CHECKING, Any, Iterator
 
-    effective_identity: str
+if TYPE_CHECKING:
+    from vertexai._genai.client import Client as _VertexClient
 
 
-@runtime_checkable
-class AgentResource(Protocol):
-    """Agent resource from Vertex AI API."""
+def resolve_resource_name(project: str, location: str, agent_id: str) -> str:
+    """Resolve an agent ID to a full resource name.
 
-    name: str
-    display_name: str
-    create_time: datetime
-    update_time: datetime
-    spec: AgentSpec | None
+    If agent_id already contains a '/', it is returned as-is (assumed to be
+    a full resource name).  Otherwise it is expanded to
+    ``projects/{project}/locations/{location}/reasoningEngines/{agent_id}``.
+    """
+    if "/" in agent_id:
+        return agent_id
+    return f"projects/{project}/locations/{location}/reasoningEngines/{agent_id}"
 
 
 class AgentEngineClient:
     """Client for interacting with Vertex AI Agent Engine."""
 
-    def __init__(self, project: str, location: str, *, base_url: str | None = None, api_version: str | None = None):
+    def __init__(
+        self,
+        project: str,
+        location: str,
+        *,
+        base_url: str | None = None,
+        api_version: str | None = None,
+    ):
         """Initialize the client with project and location.
 
         Args:
@@ -38,16 +44,19 @@ class AgentEngineClient:
         # Import vertexai locally to improve CLI startup time
         import vertexai
 
-        http_options: dict[str, Any] = {}
+        http_options: dict[str, str] = {}
         if api_version:
             http_options["api_version"] = api_version
         if base_url:
             http_options["base_url"] = base_url
 
-        self._client = vertexai.Client(
+        # vertexai.Client is lazy-exported via __getattr__; use getattr
+        # so the type checker doesn't flag the dynamic attribute lookup.
+        client_cls: type[_VertexClient] = getattr(vertexai, "Client")
+        self._client = client_cls(
             project=project,
             location=location,
-            http_options=http_options or None,
+            http_options=http_options or None,  # type: ignore[arg-type]
         )
 
     def _resolve_resource_name(self, agent_id: str) -> str:
@@ -65,9 +74,7 @@ class AgentEngineClient:
         if not agent_id or not agent_id.strip():
             raise ValueError("agent_id must not be empty")
         if any(c.isspace() or ord(c) < 32 for c in agent_id):
-            raise ValueError(
-                f"agent_id contains invalid characters: {agent_id!r}"
-            )
+            raise ValueError(f"agent_id contains invalid characters: {agent_id!r}")
         if "/" not in agent_id:
             return (
                 f"projects/{self.project}/locations/{self.location}/"
@@ -75,7 +82,7 @@ class AgentEngineClient:
             )
         return agent_id
 
-    def list_agents(self) -> Iterator[AgentResource]:
+    def list_agents(self) -> Iterator[Any]:
         """List all agents in the project.
 
         Returns:
@@ -83,7 +90,7 @@ class AgentEngineClient:
         """
         return (agent.api_resource for agent in self._client.agent_engines.list())
 
-    def get_agent(self, agent_id: str) -> AgentResource:
+    def get_agent(self, agent_id: str) -> Any:
         """Get details for a specific agent.
 
         Args:
@@ -104,7 +111,7 @@ class AgentEngineClient:
         service_account: str | None = None,
         image_uri: str | None = None,
         agent_framework: str | None = None,
-    ) -> AgentResource:
+    ) -> Any:
         """Create a new agent without deploying code.
 
         Args:
@@ -119,7 +126,7 @@ class AgentEngineClient:
         """
         from vertexai import types
 
-        config: dict = {
+        config: dict[str, Any] = {
             "display_name": display_name,
         }
 
@@ -136,7 +143,7 @@ class AgentEngineClient:
         if agent_framework:
             config["agent_framework"] = agent_framework
 
-        result = self._client.agent_engines.create(config=config)
+        result = self._client.agent_engines.create(config=config)  # type: ignore[arg-type]
         return result.api_resource
 
     def delete_agent(self, agent_id: str, force: bool = False) -> None:

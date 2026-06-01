@@ -2,12 +2,13 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 from agent_engine_cli.main import app
 
-runner = CliRunner()
+runner = CliRunner(env={"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"})
+
 
 @patch("agent_engine_cli.main.get_client")
 def test_get_agent_with_none_class_methods(mock_get_client):
     """Test get command when spec.class_methods is None (regression test)."""
-    
+
     # Mock spec with class_methods=None
     mock_spec = MagicMock()
     mock_spec.effective_identity = "test-identity"
@@ -30,7 +31,7 @@ def test_get_agent_with_none_class_methods(mock_get_client):
     result = runner.invoke(
         app, ["--project", "test-project", "--location", "us-central1", "get", "agent1"]
     )
-    
+
     assert result.exit_code == 0
     assert "Test Agent" in result.stdout
     assert "Class Methods: N/A" in result.stdout
