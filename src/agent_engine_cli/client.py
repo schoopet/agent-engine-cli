@@ -102,6 +102,8 @@ class AgentEngineClient:
         display_name: str,
         identity_type: str,
         service_account: str | None = None,
+        image_uri: str | None = None,
+        agent_framework: str | None = None,
     ) -> AgentResource:
         """Create a new agent without deploying code.
 
@@ -109,13 +111,15 @@ class AgentEngineClient:
             display_name: Human-readable name for the agent
             identity_type: Identity type ('agent_identity' or 'service_account')
             service_account: Service account email (only used with service_account identity)
+            image_uri: Artifact Registry image URI to deploy as the agent container
+            agent_framework: OSS framework used to build the agent
 
         Returns:
             The created agent's api_resource
         """
         from vertexai import types
 
-        config = {
+        config: dict = {
             "display_name": display_name,
         }
 
@@ -125,6 +129,12 @@ class AgentEngineClient:
             config["identity_type"] = types.IdentityType.SERVICE_ACCOUNT
             if service_account:
                 config["service_account"] = service_account
+
+        if image_uri:
+            config["container_spec"] = {"image_uri": image_uri}
+
+        if agent_framework:
+            config["agent_framework"] = agent_framework
 
         result = self._client.agent_engines.create(config=config)
         return result.api_resource

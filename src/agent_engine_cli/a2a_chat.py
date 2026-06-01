@@ -122,6 +122,49 @@ def extract_response_text(result: object) -> str | None:
     return "\n".join(texts) if texts else None
 
 
+_SYNTHETIC_AGENT_CARD = json.dumps({
+    "name": "Agent",
+    "description": "Agent Engine instance",
+    "url": "https://placeholder.invalid/",
+    "version": "1.0.0",
+    "capabilities": {"streaming": False},
+    "defaultInputModes": ["text/plain"],
+    "defaultOutputModes": ["text/plain"],
+    "skills": [{"id": "default", "name": "Default", "description": "Default", "tags": []}],
+})
+
+
+def _rebind_missing_a2a_methods(remote_agent: object) -> None:
+    """Re-bind A2A methods whose operation schema is missing a2a_agent_card.
+
+    The vertexai SDK unconditionally calls json.loads(agent_card) inside every
+    A2A method; if the schema omits a2a_agent_card the value is None and the
+    call crashes.  We fix this by re-wrapping each affected method with a
+    synthetic minimal AgentCard (the SDK overrides the url field anyway).
+    """
+    import types
+
+    try:
+        from vertexai._genai._agent_engines_utils import _wrap_a2a_operation
+    except ImportError:
+        return
+
+    schemas = remote_agent.operation_schemas() or []
+    for schema in schemas:
+        if schema.get("api_mode") != "a2a_extension":
+            continue
+        if schema.get("a2a_agent_card") is not None:
+            continue
+        method_name = schema.get("name")
+        if not method_name or not hasattr(remote_agent, method_name):
+            continue
+        method = _wrap_a2a_operation(
+            method_name=method_name, agent_card=_SYNTHETIC_AGENT_CARD
+        )
+        method.__name__ = method_name
+        setattr(remote_agent, method_name, types.MethodType(method, remote_agent))
+
+
 async def run_a2a_chat(
     project: str,
     location: str,
@@ -150,7 +193,11 @@ async def run_a2a_chat(
         pass
 
     if debug:
-        from agent_engine_cli.chat import _install_api_logging_hooks, _setup_debug_logging
+        from agent_engine_cli.chat import (
+            _install_api_logging_hooks,
+            _install_httpx_logging_hooks,
+            _setup_debug_logging,
+        )
 
         console.print(
             "[yellow]Warning: Debug mode logs HTTP requests/responses which "
@@ -158,6 +205,7 @@ async def run_a2a_chat(
         )
         _setup_debug_logging()
         _install_api_logging_hooks(debug=True)
+        _install_httpx_logging_hooks()
 
     import vertexai
 
@@ -170,12 +218,14 @@ async def run_a2a_chat(
     client = vertexai.Client(
         project=project, location=location, http_options=http_options
     )
-    resource_name = (
-        f"projects/{project}/locations/{location}/reasoningEngines/{agent_id}"
-    )
+    if "/" in agent_id:
+        resource_name = agent_id
+    else:
+        resource_name = f"projects/{project}/locations/{location}/reasoningEngines/{agent_id}"
     remote_agent = await asyncio.to_thread(
         client.agent_engines.get, name=resource_name
     )
+    _rebind_missing_a2a_methods(remote_agent)
 
     if debug:
         console.print(f"\n[yellow]Remote agent type:[/yellow] {type(remote_agent)}")
@@ -260,10 +310,35 @@ async def _handle_command(
                     title="Agent Card",
                 )
             )
-        except (TypeError, AttributeError) as e:
+        except TypeError:
+            # SDK bug: handle_authenticated_agent_card schema may lack a2a_agent_card,
+            # causing json.loads(None) inside _wrap_a2a_operation. Fall back to reading
+            # the agent card directly from operation_schemas().
+            try:
+                schemas = remote_agent.operation_schemas() or []
+                agent_card_data = None
+                for schema in schemas:
+                    card = schema.get("a2a_agent_card")
+                    if card:
+                        agent_card_data = card
+                        break
+                if agent_card_data:
+                    parsed = json.loads(agent_card_data) if isinstance(agent_card_data, str) else agent_card_data
+                    console.print(
+                        Panel(
+                            json.dumps(parsed, indent=2, default=str),
+                            title="Agent Card (from operation schema)",
+                        )
+                    )
+                else:
+                    console.print(
+                        "[red]Agent card not available:[/red] "
+                        "this agent does not have an agent card configured in its operation schema."
+                    )
+            except Exception as inner_e:
+                console.print(f"[red]Error fetching agent card: {escape(str(inner_e))}[/red]")
+        except AttributeError as e:
             console.print(f"[red]Error fetching agent card: {escape(str(e))}[/red]")
-            console.print(f"[yellow]{traceback.format_exc()}[/yellow]")
-            _debug_agent_object(remote_agent)
         except Exception as e:
             console.print(f"[red]Error fetching agent card: {escape(str(e))}[/red]")
 

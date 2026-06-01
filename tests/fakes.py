@@ -30,6 +30,8 @@ class CreateAgentCall:
     display_name: str
     identity_type: str
     service_account: str | None
+    image_uri: str | None = None
+    agent_framework: str | None = None
 
 
 class FakeAgentEngineClient:
@@ -70,9 +72,11 @@ class FakeAgentEngineClient:
         display_name: str,
         identity_type: str,
         service_account: str | None = None,
+        image_uri: str | None = None,
+        agent_framework: str | None = None,
     ) -> ReasoningEngine:
         self.create_agent_calls.append(
-            CreateAgentCall(display_name=display_name, identity_type=identity_type, service_account=service_account)
+            CreateAgentCall(display_name=display_name, identity_type=identity_type, service_account=service_account, image_uri=image_uri, agent_framework=agent_framework)
         )
 
         agent_id = f"agent-{len(self._agents) + 1}"

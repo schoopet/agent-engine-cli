@@ -1,0 +1,62 @@
+name: Build Binaries
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: x86_64
+            runner: ubuntu-latest
+            asset_name: ae-linux-x86_64
+          - os: macos
+            arch: arm64
+            runner: macos-latest
+            asset_name: ae-macos-arm64
+          - os: macos
+            arch: x86_64
+            runner: macos-13
+            asset_name: ae-macos-x86_64
+          - os: windows
+            arch: x86_64
+            runner: windows-latest
+            asset_name: ae-windows-x86_64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller
+          pip install .
+
+      - name: Build binary
+        run: >
+          pyinstaller
+          --onefile
+          --name ${{ matrix.asset_name }}
+          --hidden-import vertexai
+          --hidden-import vertexai.preview
+          --hidden-import google.cloud.aiplatform
+          --hidden-import google.auth
+          --hidden-import google.auth.transport.requests
+          --hidden-import google.oauth2.credentials
+          --hidden-import google.oauth2.service_account
+          --collect-submodules google.cloud.aiplatform
+          src/agent_engine_cli/__main__.py
+
+      - name: Upload binary to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.asset_name }}

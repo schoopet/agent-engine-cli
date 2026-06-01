@@ -53,6 +53,46 @@ def _setup_debug_logging() -> None:
     logging.getLogger("google.api_core").setLevel(logging.DEBUG)
 
 
+def _install_httpx_logging_hooks() -> None:
+    """Patch httpx.AsyncClient.send to log every HTTP request/response."""
+    try:
+        import httpx
+    except ImportError:
+        return
+
+    if getattr(httpx.AsyncClient.send, "_is_logged_httpx_send", False):
+        return
+
+    _original_send = httpx.AsyncClient.send
+
+    async def _logged_send(self, request, *args, **kwargs):
+        console.print(f"\n[dim]{'─' * 60}[/dim]")
+        console.print(f"[bold yellow]► {request.method}[/bold yellow] {request.url}")
+        for name, value in request.headers.items():
+            if name.lower() == "authorization":
+                value = value[:20] + "…"
+            console.print(f"  [dim]{name}:[/dim] {value}")
+        if request.content:
+            try:
+                body = json.loads(request.content)
+                console.print(
+                    f"  [dim]body:[/dim] {json.dumps(body, indent=2, default=str)}"
+                )
+            except Exception:
+                console.print(f"  [dim]body:[/dim] {request.content[:500]}")
+
+        response = await _original_send(self, request, *args, **kwargs)
+
+        console.print(f"[bold cyan]◄ {response.status_code}[/bold cyan]")
+        for name, value in response.headers.items():
+            console.print(f"  [dim]{name}:[/dim] {value}")
+        console.print(f"[dim]{'─' * 60}[/dim]\n")
+        return response
+
+    _logged_send._is_logged_httpx_send = True
+    httpx.AsyncClient.send = _logged_send
+
+
 def _install_api_logging_hooks(debug: bool) -> None:
     """Install monkey patches for API request/response logging."""
     from google.genai import _api_client
@@ -159,9 +199,10 @@ async def run_chat(
     if base_url:
         http_options["base_url"] = base_url
     client = vertexai.Client(project=project, location=location, http_options=http_options)
-    resource_name = (
-        f"projects/{project}/locations/{location}/reasoningEngines/{agent_id}"
-    )
+    if "/" in agent_id:
+        resource_name = agent_id
+    else:
+        resource_name = f"projects/{project}/locations/{location}/reasoningEngines/{agent_id}"
     adk_app = await asyncio.to_thread(client.agent_engines.get, name=resource_name)
 
     # Create session

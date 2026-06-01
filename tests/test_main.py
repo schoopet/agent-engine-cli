@@ -164,6 +164,68 @@ class TestCreateCommand:
             service_account="my-sa@proj.iam.gserviceaccount.com",
         )
 
+    @patch("agent_engine_cli.main.get_client")
+    def test_create_agent_with_image_uri(self, mock_get_client):
+        """Test create command with a container image URI."""
+        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        mock_get_client.return_value = fake_client
+
+        result = runner.invoke(
+            app, ["--project", "test-project", "--location", "us-central1", "create", "My Agent",
+                  "--image-uri", "us-central1-docker.pkg.dev/my-project/my-repo/my-image:latest"]
+        )
+        assert result.exit_code == 0
+
+        assert len(fake_client.create_agent_calls) == 1
+        assert fake_client.create_agent_calls[0] == CreateAgentCall(
+            display_name="My Agent",
+            identity_type="agent_identity",
+            service_account=None,
+            image_uri="us-central1-docker.pkg.dev/my-project/my-repo/my-image:latest",
+        )
+
+    @patch("agent_engine_cli.main.get_client")
+    def test_create_agent_with_framework(self, mock_get_client):
+        """Test create command with an agent framework."""
+        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        mock_get_client.return_value = fake_client
+
+        result = runner.invoke(
+            app, ["--project", "test-project", "--location", "us-central1", "create", "My Agent",
+                  "--agent-framework", "google-adk"]
+        )
+        assert result.exit_code == 0
+
+        assert len(fake_client.create_agent_calls) == 1
+        assert fake_client.create_agent_calls[0] == CreateAgentCall(
+            display_name="My Agent",
+            identity_type="agent_identity",
+            service_account=None,
+            agent_framework="google-adk",
+        )
+
+    @patch("agent_engine_cli.main.get_client")
+    def test_create_agent_with_image_uri_and_framework(self, mock_get_client):
+        """Test create command combining --image-uri and --agent-framework."""
+        fake_client = FakeAgentEngineClient(project="test-project", location="us-central1")
+        mock_get_client.return_value = fake_client
+
+        result = runner.invoke(
+            app, ["--project", "test-project", "--location", "us-central1", "create", "My Agent",
+                  "--image-uri", "us-central1-docker.pkg.dev/my-project/my-repo/my-image:latest",
+                  "--agent-framework", "langchain"]
+        )
+        assert result.exit_code == 0
+
+        assert len(fake_client.create_agent_calls) == 1
+        assert fake_client.create_agent_calls[0] == CreateAgentCall(
+            display_name="My Agent",
+            identity_type="agent_identity",
+            service_account=None,
+            image_uri="us-central1-docker.pkg.dev/my-project/my-repo/my-image:latest",
+            agent_framework="langchain",
+        )
+
 
 class TestDeleteCommand:
     def test_delete_help(self):

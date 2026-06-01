@@ -26,24 +26,49 @@ class State:
 state = State()
 
 
-def _resolve_config() -> tuple[str, str]:
-    """Validate location and resolve project, returning (project, location)."""
-    if not state.location:
+def _parse_resource_name(agent_id: str) -> tuple[str, str] | None:
+    """Extract (project, location) from a full resource name, or None if not a full name.
+
+    Expects: projects/{project}/locations/{location}/reasoningEngines/{id}
+    """
+    parts = agent_id.split("/")
+    if (
+        len(parts) == 6
+        and parts[0] == "projects"
+        and parts[2] == "locations"
+        and parts[4] == "reasoningEngines"
+    ):
+        return parts[1], parts[3]
+    return None
+
+
+def _resolve_config(agent_id: str | None = None) -> tuple[str, str]:
+    """Validate location and resolve project, returning (project, location).
+
+    If agent_id is a full resource name, project and location are extracted from it
+    as fallbacks when --project / --location flags were not provided.
+    """
+    parsed = _parse_resource_name(agent_id) if agent_id else None
+    fallback_project = parsed[0] if parsed else None
+    fallback_location = parsed[1] if parsed else None
+
+    location = state.location or fallback_location
+    if not location:
         console.print("[red]Error: Location is required. Use --location or set it globally.[/red]")
         raise typer.Exit(code=1)
 
     try:
-        project = resolve_project(state.project)
+        project = resolve_project(state.project or fallback_project)
     except Exception as e:
         console.print(f"[red]Error: {escape(str(e))}[/red]")
         raise typer.Exit(code=1)
 
-    return project, state.location
+    return project, location
 
 
-def get_ready_client():
+def get_ready_client(agent_id: str | None = None):
     """Helper to resolve project and return an initialized client."""
-    project, location = _resolve_config()
+    project, location = _resolve_config(agent_id)
     return get_client(
         project=project,
         location=location,
@@ -150,7 +175,7 @@ def get_agent(
     full: Annotated[bool, typer.Option("--full", "-f", help="Show full JSON output")] = False,
 ) -> None:
     """Get details for a specific agent."""
-    client = get_ready_client()
+    client = get_ready_client(agent_id)
     try:
         agent = client.get_agent(agent_id)
 
@@ -277,6 +302,14 @@ def create_agent(
         str | None,
         typer.Option("--service-account", "-s", help="Service account email (only used with --identity service_account)"),
     ] = None,
+    image_uri: Annotated[
+        str | None,
+        typer.Option("--image-uri", help="Artifact Registry image URI to deploy as the agent container (e.g. us-central1-docker.pkg.dev/my-project/my-repo/my-image:tag)"),
+    ] = None,
+    agent_framework: Annotated[
+        str | None,
+        typer.Option("--agent-framework", help="OSS framework used to build the agent. One of: google-adk, langchain, langgraph, ag2, llama-index, custom"),
+    ] = None,
 ) -> None:
     """Create a new agent (without deploying code)."""
     client = get_ready_client()
@@ -287,6 +320,8 @@ def create_agent(
             display_name=display_name,
             identity_type=identity,
             service_account=service_account,
+            image_uri=image_uri,
+            agent_framework=agent_framework,
         )
 
         name = get_id(agent)
@@ -312,7 +347,7 @@ def delete_agent(
             console.print("Aborted.")
             raise typer.Exit()
 
-    client = get_ready_client()
+    client = get_ready_client(agent_id)
     try:
         client.delete_agent(agent_id, force=force)
         console.print(f"[red]Agent '{escape(agent_id)}' deleted.[/red]")
@@ -331,7 +366,7 @@ def list_sessions(
     agent_id: Annotated[str, typer.Argument(help="Agent ID or full resource name")],
 ) -> None:
     """List all sessions for an agent."""
-    client = get_ready_client()
+    client = get_ready_client(agent_id)
     try:
         sessions = client.list_sessions(agent_id)
 
@@ -390,7 +425,7 @@ def list_sandboxes(
     agent_id: Annotated[str, typer.Argument(help="Agent ID or full resource name")],
 ) -> None:
     """List all sandboxes for an agent."""
-    client = get_ready_client()
+    client = get_ready_client(agent_id)
     try:
         sandboxes = list(client.list_sandboxes(agent_id))
 
@@ -453,7 +488,7 @@ def list_memories(
     agent_id: Annotated[str, typer.Argument(help="Agent ID or full resource name")],
 ) -> None:
     """List all memories for an agent."""
-    client = get_ready_client()
+    client = get_ready_client(agent_id)
     try:
         memories = list(client.list_memories(agent_id))
 
@@ -518,7 +553,7 @@ def chat(
     debug: Annotated[bool, typer.Option("--debug", "-d", help="Enable verbose HTTP debug logging")] = False,
 ) -> None:
     """Start an interactive chat session with an agent."""
-    project, location = _resolve_config()
+    project, location = _resolve_config(agent_id)
 
     try:
         from agent_engine_cli.chat import run_chat
@@ -544,7 +579,7 @@ def a2a_chat(
     debug: Annotated[bool, typer.Option("--debug", "-d", help="Enable verbose HTTP debug logging")] = False,
 ) -> None:
     """Start an interactive A2A chat session with an agent."""
-    project, location = _resolve_config()
+    project, location = _resolve_config(agent_id)
 
     try:
         from agent_engine_cli.a2a_chat import run_a2a_chat
