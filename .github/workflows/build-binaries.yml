@@ -21,7 +21,7 @@ jobs:
             asset_name: ae-macos-arm64
           - os: macos
             arch: x86_64
-            runner: macos-13
+            runner: macos-26-intel
             asset_name: ae-macos-x86_64
           - os: windows
             arch: x86_64
@@ -29,10 +29,10 @@ jobs:
             asset_name: ae-windows-x86_64.exe
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -58,6 +58,6 @@ jobs:
           src/agent_engine_cli/__main__.py
 
       - name: Upload binary to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/${{ matrix.asset_name }}
