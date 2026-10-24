@@ -4,12 +4,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterator
 
-from vertexai._genai.types.common import (
+from agentplatform._genai.types.common import (
     Memory,
     ReasoningEngine,
     ReasoningEngineSpec,
     SandboxEnvironment,
-    SandboxState,
     Session,
 )
 

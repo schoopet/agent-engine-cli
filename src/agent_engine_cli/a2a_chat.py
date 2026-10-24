@@ -124,7 +124,13 @@ _SYNTHETIC_AGENT_CARD = json.dumps(
     {
         "name": "Agent",
         "description": "Agent Engine instance",
-        "url": "https://placeholder.invalid/",
+        "supportedInterfaces": [
+            {
+                "url": "https://placeholder.invalid/",
+                "protocolBinding": "HTTP+JSON",
+                "protocolVersion": "1.0",
+            }
+        ],
         "version": "1.0.0",
         "capabilities": {"streaming": False},
         "defaultInputModes": ["text/plain"],
@@ -139,17 +145,14 @@ _SYNTHETIC_AGENT_CARD = json.dumps(
 def _rebind_missing_a2a_methods(remote_agent: object) -> None:
     """Re-bind A2A methods whose operation schema is missing a2a_agent_card.
 
-    The vertexai SDK unconditionally calls json.loads(agent_card) inside every
+    The agentplatform SDK unconditionally calls json.loads(agent_card) inside every
     A2A method; if the schema omits a2a_agent_card the value is None and the
     call crashes.  We fix this by re-wrapping each affected method with a
     synthetic minimal AgentCard (the SDK overrides the url field anyway).
     """
     import types
 
-    try:
-        from vertexai._genai._agent_engines_utils import _wrap_a2a_operation
-    except ImportError:
-        return
+    from agentplatform._genai._runtimes_utils import _wrap_a2a_operation
 
     schemas = remote_agent.operation_schemas() or []
     for schema in schemas:
@@ -258,7 +261,7 @@ async def run_a2a_chat(
 
 def _debug_agent_object(remote_agent: object) -> None:
     """Print diagnostic info about the remote agent object."""
-    console.print(f"\n[yellow]--- Agent object debug ---[/yellow]")
+    console.print("\n[yellow]--- Agent object debug ---[/yellow]")
     console.print(f"[yellow]Type:[/yellow] {type(remote_agent)}")
     for name in (
         "on_message_send",
@@ -272,7 +275,7 @@ def _debug_agent_object(remote_agent: object) -> None:
         console.print(f"[yellow]  .{name}:[/yellow] {type(attr).__name__} = {attr!r}")
     public = [a for a in dir(remote_agent) if not a.startswith("_")]
     console.print(f"[yellow]Public attrs:[/yellow] {public}")
-    console.print(f"[yellow]--- End debug ---[/yellow]\n")
+    console.print("[yellow]--- End debug ---[/yellow]\n")
 
 
 async def _handle_command(

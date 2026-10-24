@@ -4,7 +4,7 @@ from datetime import datetime
 from unittest.mock import patch
 
 from typer.testing import CliRunner
-from vertexai._genai.types.common import (
+from agentplatform._genai.types.common import (
     Memory,
     ReasoningEngine,
     ReasoningEngineSpec,
@@ -703,7 +703,7 @@ class TestSessionsListCommand:
         """Test sessions list command help."""
         result = runner.invoke(app, ["sessions", "list", "--help"])
         assert result.exit_code == 0
-        assert "AGENT_ID" in result.stdout
+        assert "agent_id" in result.stdout.lower()
 
     @patch("agent_engine_cli.main.get_client")
     def test_sessions_list_no_sessions(self, mock_get_client):
@@ -826,7 +826,7 @@ class TestSandboxesListCommand:
         """Test sandboxes list command help."""
         result = runner.invoke(app, ["sandboxes", "list", "--help"])
         assert result.exit_code == 0
-        assert "AGENT_ID" in result.stdout
+        assert "agent_id" in result.stdout.lower()
 
     @patch("agent_engine_cli.main.get_client")
     def test_sandboxes_list_no_sandboxes(self, mock_get_client):
@@ -951,7 +951,7 @@ class TestMemoriesListCommand:
         """Test memories list command help."""
         result = runner.invoke(app, ["memories", "list", "--help"])
         assert result.exit_code == 0
-        assert "AGENT_ID" in result.stdout
+        assert "agent_id" in result.stdout.lower()
 
     @patch("agent_engine_cli.main.get_client")
     def test_memories_list_no_memories(self, mock_get_client):
@@ -1078,7 +1078,7 @@ class TestA2AChatCommand:
         result = runner.invoke(app, ["a2a-chat", "--help"])
         assert result.exit_code == 0
         assert "--debug" in result.stdout
-        assert "AGENT_ID" in result.stdout
+        assert "agent_id" in result.stdout.lower()
 
     @patch("agent_engine_cli.a2a_chat.run_a2a_chat")
     def test_a2a_chat_invokes_run_a2a_chat(self, mock_run_a2a_chat):

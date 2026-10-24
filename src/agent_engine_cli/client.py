@@ -5,10 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
-    from vertexai._genai.client import Client as _VertexClient
-    from vertexai._genai.types.common import (
+    from agentplatform._genai.client import Client as _AgentPlatformClient
+    from agentplatform._genai.types.common import (
         Memory,
         ReasoningEngine,
+        Runtime,
         SandboxEnvironment,
         Session,
     )
@@ -43,6 +44,7 @@ class AgentEngineClient:
         *,
         base_url: str | None = None,
         api_version: str | None = None,
+        timeout_ms: int | None = None,
     ):
         """Initialize the client with project and location.
 
@@ -51,21 +53,24 @@ class AgentEngineClient:
             location: Google Cloud region
             base_url: Optional override for the Vertex AI base URL
             api_version: Optional API version override
+            timeout_ms: Optional HTTP request timeout in milliseconds
         """
         self.project = project
         self.location = location
-        # Import vertexai locally to improve CLI startup time
-        import vertexai
+        # Import agentplatform locally to improve CLI startup time
+        import agentplatform
 
-        http_options: dict[str, str] = {}
+        http_options: dict[str, Any] = {}
+        if timeout_ms:
+            http_options["timeout"] = timeout_ms
         if api_version:
             http_options["api_version"] = api_version
         if base_url:
             http_options["base_url"] = base_url
 
-        # vertexai.Client is lazy-exported via __getattr__; use getattr
+        # agentplatform.Client is lazy-exported via __getattr__; use getattr
         # so the type checker doesn't flag the dynamic attribute lookup.
-        client_cls: type[_VertexClient] = getattr(vertexai, "Client")
+        client_cls: type[_AgentPlatformClient] = getattr(agentplatform, "Client")
         self._client = client_cls(
             project=project,
             location=location,
@@ -82,7 +87,19 @@ class AgentEngineClient:
         Returns:
             Iterator of ReasoningEngine instances
         """
-        return (agent.api_resource for agent in self._client.agent_engines.list())
+        return (agent.api_resource for agent in self._client.runtimes.list())
+
+    def get_runtime(self, agent_id: str) -> Runtime:
+        """Get the SDK Runtime wrapper for an agent, with its query methods bound.
+
+        Args:
+            agent_id: The agent resource ID or full resource name
+
+        Returns:
+            Runtime wrapper (use ``get_agent`` for just the resource details)
+        """
+        resource_name = self._resolve_resource_name(agent_id)
+        return self._client.runtimes.get(name=resource_name)
 
     def get_agent(self, agent_id: str) -> ReasoningEngine:
         """Get details for a specific agent.
@@ -93,9 +110,7 @@ class AgentEngineClient:
         Returns:
             ReasoningEngine with agent details
         """
-        resource_name = self._resolve_resource_name(agent_id)
-        agent = self._client.agent_engines.get(name=resource_name)
-        return agent.api_resource
+        return self.get_runtime(agent_id).api_resource
 
     def create_agent(
         self,
@@ -117,7 +132,7 @@ class AgentEngineClient:
         Returns:
             The created agent's ReasoningEngine
         """
-        from vertexai import types
+        from agentplatform import types
 
         config: dict[str, Any] = {
             "display_name": display_name,
@@ -136,7 +151,7 @@ class AgentEngineClient:
         if agent_framework:
             config["agent_framework"] = agent_framework
 
-        result = self._client.agent_engines.create(config=config)  # type: ignore[arg-type]
+        result = self._client.runtimes.create(config=config)  # type: ignore[arg-type]
         return result.api_resource
 
     def delete_agent(self, agent_id: str, force: bool = False) -> None:
@@ -147,7 +162,7 @@ class AgentEngineClient:
             force: Force deletion even if agent has associated resources
         """
         resource_name = self._resolve_resource_name(agent_id)
-        self._client.agent_engines.delete(name=resource_name, force=force)
+        self._client.runtimes.delete(name=resource_name, force=force)
 
     def list_sessions(self, agent_id: str) -> Iterator[Session]:
         """List all sessions for an agent.
@@ -160,7 +175,7 @@ class AgentEngineClient:
         """
         resource_name = self._resolve_resource_name(agent_id)
 
-        return self._client.agent_engines.list_sessions(name=resource_name)
+        return self._client.sessions.list(name=resource_name)
 
     def list_sandboxes(self, agent_id: str) -> Iterator[SandboxEnvironment]:
         """List all sandboxes for an agent.
@@ -173,7 +188,7 @@ class AgentEngineClient:
         """
         resource_name = self._resolve_resource_name(agent_id)
 
-        return self._client.agent_engines.sandboxes.list(name=resource_name)
+        return self._client.sandboxes.list(name=resource_name)
 
     def list_memories(self, agent_id: str) -> Iterator[Memory]:
         """List all memories for an agent.
@@ -186,4 +201,4 @@ class AgentEngineClient:
         """
         resource_name = self._resolve_resource_name(agent_id)
 
-        return self._client.agent_engines.memories.list(name=resource_name)
+        return self._client.memory_banks.memories.list(name=resource_name)

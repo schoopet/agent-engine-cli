@@ -1,5 +1,3 @@
-import sys
-from unittest.mock import MagicMock, patch
 
 # We need to import the function to test
 from agent_engine_cli.chat import _install_api_logging_hooks

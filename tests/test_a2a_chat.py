@@ -1,8 +1,16 @@
 """Tests for A2A chat pure functions."""
 
+import json
+
+from a2a.types import AgentCard
+from a2a.utils.constants import TransportProtocol
+from google.protobuf import json_format
+
 from agent_engine_cli.a2a_chat import (
+    _SYNTHETIC_AGENT_CARD,
     SlashCommand,
     UserMessage,
+    _rebind_missing_a2a_methods,
     build_message_kwargs,
     extract_response_text,
     parse_context,
@@ -161,3 +169,52 @@ class TestExtractResponseText:
     def test_no_text_in_parts(self):
         result = {"artifacts": [{"parts": [{"kind": "image"}]}]}
         assert extract_response_text(result) is None
+
+
+class TestRebindMissingA2AMethods:
+    def test_synthetic_card_satisfies_sdk(self):
+        """The SDK wrapper requires an HTTP+JSON supported interface on the card."""
+        card = AgentCard()
+        json_format.ParseDict(
+            json.loads(_SYNTHETIC_AGENT_CARD), card, ignore_unknown_fields=True
+        )
+        assert card.supported_interfaces
+        assert card.supported_interfaces[0].protocol_binding == TransportProtocol.HTTP_JSON
+
+    def test_rebinds_method_missing_agent_card(self):
+        def original(self):
+            pass
+
+        class RemoteAgent:
+            on_message_send = original
+
+            def operation_schemas(self):
+                return [
+                    {"name": "on_message_send", "api_mode": "a2a_extension"},
+                    {"name": "query", "api_mode": ""},
+                ]
+
+        agent = RemoteAgent()
+        _rebind_missing_a2a_methods(agent)
+        assert agent.on_message_send.__func__ is not original
+        assert agent.on_message_send.__name__ == "on_message_send"
+
+    def test_keeps_method_with_agent_card(self):
+        def original(self):
+            pass
+
+        class RemoteAgent:
+            on_message_send = original
+
+            def operation_schemas(self):
+                return [
+                    {
+                        "name": "on_message_send",
+                        "api_mode": "a2a_extension",
+                        "a2a_agent_card": "{}",
+                    }
+                ]
+
+        agent = RemoteAgent()
+        _rebind_missing_a2a_methods(agent)
+        assert agent.on_message_send.__func__ is original

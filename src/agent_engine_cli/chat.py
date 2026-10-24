@@ -152,9 +152,9 @@ def _install_api_logging_hooks(debug: bool) -> None:
 
 
 def suppress_experimental_warnings() -> None:
-    """Suppress vertexai experimental warnings."""
+    """Suppress agentplatform experimental warnings."""
     try:
-        from vertexai._genai.constants import ExperimentalWarning
+        from google.genai._common import ExperimentalWarning
 
         warnings.filterwarnings("ignore", category=ExperimentalWarning)
     except ImportError:
@@ -179,25 +179,20 @@ async def get_remote_agent(
     base_url: str | None = None,
     api_version: str | None = None,
 ) -> Any:
-    """Create a vertexai client and fetch a remote agent.
+    """Create an agentplatform client and fetch a remote agent.
 
-    Returns the AgentEngine wrapper object (not the unwrapped api_resource).
+    Returns the Runtime wrapper object (not the unwrapped api_resource).
     """
-    import vertexai
+    from agent_engine_cli.client import AgentEngineClient
 
-    from agent_engine_cli.client import resolve_resource_name
-
-    http_options: dict[str, Any] = {"timeout": 10_000}
-    if api_version:
-        http_options["api_version"] = api_version
-    if base_url:
-        http_options["base_url"] = base_url
-
-    client = vertexai.Client(
-        project=project, location=location, http_options=http_options
+    client = AgentEngineClient(
+        project,
+        location,
+        base_url=base_url,
+        api_version=api_version,
+        timeout_ms=10_000,
     )
-    resource_name = resolve_resource_name(project, location, agent_id)
-    return await asyncio.to_thread(client.agent_engines.get, name=resource_name)
+    return await asyncio.to_thread(client.get_runtime, agent_id)
 
 
 async def run_chat(
