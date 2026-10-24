@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-10-24
+
+### Added
+
+- `ae create` accepts `--image-uri` to deploy a prebuilt Artifact Registry container and `--agent-framework` to declare the agent framework (`google-adk`, `langchain`, `langgraph`, `ag2`, `llama-index`, `custom`).
+
+### Changed
+
+- Migrated from the deprecated `vertexai.Client` to `agentplatform.Client`. Requires `google-cloud-aiplatform>=2.6.0`.
+- Upgraded all dependencies, including `google-cloud-aiplatform` 2.6, `protobuf` 7, `a2a-sdk` 1.2, and `typer` 0.27.
+- `ae delete` now goes through the SDK client, so it honors `--base-url`.
+- CRUD commands only catch API and validation errors; unexpected errors are no longer swallowed.
+- Debug mode masks auth tokens fully as `Bearer ***`.
+
+### Fixed
+
+- `ae a2a-chat` works with agents whose operation schema lacks an agent card (the fallback card now uses the A2A v1.0 format).
+- `ae sandboxes list` no longer crashes on import (added `google-cloud-iam` dependency).
+- `ae version` reports the installed package version instead of a stale hard-coded one.
+
+### Performance
+
+- Deferred chat imports for faster CLI startup.
+
+## [0.1.8] - 2026-03-07
+
+### Changed
+
+- Project URLs now point to the `schoopet` GitHub organization.
+
+## [0.1.7] - 2026-02-24
+
+### Added
+
+- New `ae a2a-chat` command for interacting with agents over the A2A protocol.
+
+### Changed
+
+- Upgraded dependencies to latest versions.
+
+### Performance
+
+- Session listing streams results through iterators instead of materializing the full list.
+
 ## [0.1.6] - 2026-02-11
 
 ### Changed

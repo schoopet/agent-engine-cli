@@ -46,8 +46,9 @@ jobs:
           pyinstaller
           --onefile
           --name ${{ matrix.asset_name }}
-          --hidden-import vertexai
-          --hidden-import vertexai.preview
+          --hidden-import agentplatform
+          --collect-submodules agentplatform
+          --copy-metadata agent-engine-cli
           --hidden-import google.cloud.aiplatform
           --hidden-import google.auth
           --hidden-import google.auth.transport.requests

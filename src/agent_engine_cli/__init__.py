@@ -1,3 +1,8 @@
 """Agent Engine CLI package."""
 
-__version__ = "0.1.6"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("agent-engine-cli")
+except PackageNotFoundError:
+    __version__ = "unknown"
